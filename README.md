@@ -61,3 +61,20 @@ what the app renders. All 69 periods, all 52 state values, and all 222 plans
 ## Deploy
 Push to GitHub, point a Streamlit Community Cloud app at `app.py`.
 `runtime.txt` pins Python 3.12 and `requirements.txt` pins every version.
+
+## One plan, two spellings
+The source spells 15 plans two ways, changing punctuation or casing partway
+through, e.g. "Virginia CollegeAmerica" and "Virginia - CollegeAmerica". Left
+alone, one plan reads as two and its history breaks in half; Virginia
+CollegeAmerica's chart began in 2019 instead of 2009.
+
+The loader merges them on a punctuation-blind key, adopts the most recent
+spelling, and names the alias on the Plans tab. No two spellings ever report in
+the same period, so nothing double counts, and the loader asserts that on every
+run. National and state totals are unchanged, since only labels are merged.
+
+## Movement tab
+Ordered by dollars, not percent. Sorting by percent put a $2.5M plan (+59.8%)
+above Virginia CollegeAmerica, which added $2.08B. The scatter sizes each
+bubble by the assets the plan holds, so the large percentage swings visibly
+belong to the small plans.

@@ -135,6 +135,22 @@ def load():
     d["t"] = d["period"].dt.to_timestamp(how="end")
     d["state"] = d["state"].str.strip()
     d["plan"] = d["plan"].str.strip()
+    # The source spells 15 plans two ways, changing punctuation or casing
+    # partway through (Virginia CollegeAmerica became Virginia - CollegeAmerica
+    # and back). Left alone, one plan reads as two and its history breaks in
+    # half. Merge on a punctuation-blind key and adopt the most recent spelling.
+    # No two spellings ever report in the same period, so nothing double counts,
+    # and the assertion below keeps it that way.
+    d["alias"] = d["plan"]
+    d["_k"] = (d["plan"].str.normalize("NFKC").str.lower()
+               .str.replace(r"[^a-z0-9]", "", regex=True))
+    newest = (d.sort_values(["Year", "Period"])
+              .groupby("_k")["plan"].last())
+    d["plan"] = d["_k"].map(newest)
+    clash = d[d["assets"].notna()].groupby(["_k", "Year", "Period"]).size()
+    assert (clash <= 1).all(), "two spellings report in the same period"
+    d = d.drop(columns="_k")
+
     d["type"] = np.where(d["plan"].str.contains(PREPAID), "Prepaid", "Savings")
     d["note"] = d["note"].fillna("")
     d["reporting"] = d["assets"].notna()
@@ -157,8 +173,11 @@ LABELS = [f"{p.year}Q{p.quarter}" for p in QS]
 PLOT = {"width": "stretch", "config": {"displayModeBar": False}}
 
 
+COLORWAY = [GREEN, STEEL, AMBER, DARK, "#8FB07C", "#4A5D57"]
+
+
 def fig(f, h=340):
-    f.update_layout(template="plotly_white", height=h,
+    f.update_layout(template="plotly_white", height=h, colorway=COLORWAY,
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                     font=dict(family="Inter,sans-serif", size=12, color=INK),
                     margin=dict(l=10, r=10, t=30, b=10),
@@ -210,15 +229,10 @@ yoy = df[df["period"] == yoy_p] if yoy_p is not None else df.iloc[:0]
 prior_lbl = f"{prev_p.year}Q{prev_p.quarter}" if prev_p is not None else "n/a"
 
 # ────────────────────────── header ──────────────────────────
-hl, hr = st.columns([5, 1])
-with hl:
-    st.markdown('<div class="eyebrow">Member dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="pagetitle">Assets & Accounts</div>',
-                unsafe_allow_html=True)
-    st.markdown(f'<div class="subtitle">Total assets and open accounts for every '
-                f'529 plan on record. Showing {q_sel}.</div>', unsafe_allow_html=True)
-with hr:
-    st.image("assets/logo.png", width="stretch")
+st.markdown('<div class="eyebrow">Member dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="pagetitle">Assets & Accounts</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="subtitle">Total assets and open accounts for every '
+            f'529 plan on record. Showing {q_sel}.</div>', unsafe_allow_html=True)
 
 # Count real jurisdictions. PRIVATE is the multistate plan, not a state.
 geo = cur[cur["state"] != "PRIVATE"]["state"].unique()
@@ -243,10 +257,6 @@ st.markdown(f"""
     <div class="d"><span class="flat">{n_states} states{dc_txt}</span></div></div>
 </div>
 """, unsafe_allow_html=True)
-
-tabs = st.tabs(["National", "States", "Plans", "Compare", "Movement",
-                "Data & Notes"])
-
 
 def tell_the_story() -> str:
     """One accurate paragraph about the selected period, written from the data."""
@@ -273,6 +283,10 @@ def tell_the_story() -> str:
 
 st.markdown(f'<div class="callout">{tell_the_story()}</div>',
             unsafe_allow_html=True)
+
+tabs = st.tabs(["National", "States", "Plans", "Compare", "Movement",
+                "Data & Notes"])
+
 
 # ────────────────────────── National ──────────────────────────
 with tabs[0]:
@@ -370,6 +384,7 @@ with tabs[1]:
          .agg(assets=("assets", "sum"), accounts=("accounts", "sum"),
               plans=("plan", "nunique")))
     s["avg"] = [ratio(a, c) for a, c in zip(s["assets"], s["accounts"])]
+    s["avg"] = s["avg"].round(0)
     s["usps"] = s["state"].map(USPS)
     mapped = s.dropna(subset=["usps"])
     offmap = s[s["usps"].isna()]
@@ -413,9 +428,9 @@ with tabs[1]:
         hide_index=True, width="stretch", height=280,
         column_config={
             "state": "State", "plans": "Plans",
-            "assets": st.column_config.NumberColumn("Assets", format="$%.0f"),
-            "accounts": st.column_config.NumberColumn("Accounts", format="%d"),
-            "avg": st.column_config.NumberColumn("Avg balance", format="$%.0f")})
+            "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
+            "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
+            "avg": st.column_config.NumberColumn("Avg balance ($)", format="localized")})
 
     st.divider()
     state = st.selectbox("Look at one state", sorted(df["state"].unique()))
@@ -437,29 +452,32 @@ with tabs[1]:
 
     g = (sd.groupby("t", as_index=False)
          .agg(assets=("assets", "sum"), accounts=("accounts", "sum")))
-    c1, c2 = st.columns([3, 2])
-    with c1:
-        st.markdown(f"#### {state}: assets and accounts")
-        f = go.Figure()
-        f.add_scatter(x=g["t"], y=g["assets"], name="Assets",
-                      line=dict(color=GREEN, width=2),
-                      hovertemplate="%{x|%Y Q%q}<br>%{y:$,.4s}<extra>Assets</extra>")
-        f.add_scatter(x=g["t"], y=g["accounts"], name="Accounts", yaxis="y2",
-                      line=dict(color=STEEL, width=2, dash="dot"),
-                      hovertemplate="%{x|%Y Q%q}<br>%{y:,.0f}<extra>Accounts</extra>")
-        f.update_layout(yaxis2=dict(overlaying="y", side="right", showgrid=False))
-        st.plotly_chart(fig(f), **PLOT)
-    with c2:
-        st.markdown(f"#### Plans in {state}, {q_sel}")
-        st.dataframe(
-            sc.groupby(["plan", "type"], as_index=False)
-              .agg(assets=("assets", "sum"), accounts=("accounts", "sum"))
-              .sort_values("assets", ascending=False),
-            hide_index=True, width="stretch", height=300,
-            column_config={
-                "plan": "Plan", "type": "Type",
-                "assets": st.column_config.NumberColumn("Assets", format="$%.0f"),
-                "accounts": st.column_config.NumberColumn("Accounts", format="%d")})
+    st.markdown(f"#### {state}: assets and accounts")
+    f = go.Figure()
+    f.add_scatter(x=g["t"], y=g["assets"], name="Assets",
+                  line=dict(color=GREEN, width=2),
+                  hovertemplate="%{x|%Y Q%q}<br>%{y:$,.4s}<extra>Assets</extra>")
+    f.add_scatter(x=g["t"], y=g["accounts"], name="Accounts", yaxis="y2",
+                  line=dict(color=STEEL, width=2, dash="dot"),
+                  hovertemplate="%{x|%Y Q%q}<br>%{y:,.0f}<extra>Accounts</extra>")
+    f.update_layout(yaxis2=dict(overlaying="y", side="right", showgrid=False))
+    st.plotly_chart(fig(f, 340), **PLOT)
+
+    st.markdown(f"#### Plans in {state}, {q_sel}")
+    pt = (sc.groupby(["plan", "type"], as_index=False)
+          .agg(assets=("assets", "sum"), accounts=("accounts", "sum"))
+          .sort_values("assets", ascending=False))
+    pt["avg"] = pd.Series(
+        [ratio(a, c) for a, c in zip(pt["assets"], pt["accounts"])],
+        index=pt.index).round(0)
+    st.dataframe(
+        pt, hide_index=True, width="stretch",
+        column_config={
+            "plan": st.column_config.TextColumn("Plan", width="large"),
+            "type": "Type",
+            "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
+            "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
+            "avg": st.column_config.NumberColumn("Avg balance ($)", format="localized")})
 
 # ────────────────────────── Plans ──────────────────────────
 with tabs[2]:
@@ -510,6 +528,12 @@ with tabs[2]:
         <div class="k">First on record</div></div>
     </div>""", unsafe_allow_html=True)
 
+    aliases = sorted(set(pf["alias"]) - {plan})
+    if aliases:
+        st.markdown(f'<div class="note">The record also spells this plan '
+                    f'{", ".join(chr(34) + a + chr(34) for a in aliases)}. '
+                    f'Both spellings are the same plan, and its history below '
+                    f'is joined.</div>', unsafe_allow_html=True)
     if len(pf) < 3:
         st.markdown(f'<div class="note">This plan reports in only {len(pf)} '
                     f'period(s), so its charts show a short line.</div>',
@@ -533,13 +557,15 @@ with tabs[2]:
         st.plotly_chart(fig(f, 300), **PLOT)
 
     hist = pf[["quarter", "assets", "accounts"]].copy()
-    hist["avg"] = [ratio(a, c) for a, c in zip(hist["assets"], hist["accounts"])]
+    hist["avg"] = pd.Series(
+        [ratio(a, c) for a, c in zip(hist["assets"], hist["accounts"])],
+        index=hist.index).round(0)
     st.dataframe(hist.iloc[::-1], hide_index=True, width="stretch", height=280,
                  column_config={
                      "quarter": "Period",
-                     "assets": st.column_config.NumberColumn("Assets", format="$%.0f"),
-                     "accounts": st.column_config.NumberColumn("Accounts", format="%d"),
-                     "avg": st.column_config.NumberColumn("Avg balance", format="$%.0f")})
+                     "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
+                     "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
+                     "avg": st.column_config.NumberColumn("Avg balance ($)", format="localized")})
     st.download_button("Download this plan's history",
                        hist.to_csv(index=False).encode(),
                        file_name=f"{re.sub(r'[^A-Za-z0-9]+', '_', plan)}.csv",
@@ -559,10 +585,6 @@ with tabs[3]:
                       horizontal=True)
     with c3:
         idx = st.toggle("Index each line to 100 at its first period")
-    st.markdown('<div class="note">Comparing raw size favors big states. Turn on '
-                'indexing to compare how fast each line grew instead: every line '
-                'starts at 100, so a line at 200 has doubled.</div>',
-                unsafe_allow_html=True)
     col = "state" if level == "States" else "plan"
     src_df = df if level == "States" else df[df["plan_level"]]
     opts = sorted(src_df[col].unique())
@@ -589,17 +611,22 @@ with tabs[3]:
         if idx:
             f.add_hline(y=100, line_dash="dot", line_color=STEEL)
         st.plotly_chart(fig(f, 440), **PLOT)
-        st.markdown('<div class="note">Indexing rebases every line to 100 at its own '
-                    'first period, so the chart compares growth paths instead of '
-                    'size.</div>', unsafe_allow_html=True)
+        if idx:
+            st.markdown('<div class="note">Every line now starts at 100 at its own '
+                        'first period, so this compares growth paths, not size. A '
+                        'line at 200 has doubled.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="note">These are raw totals, so bigger plans '
+                        'sit higher. Turn on indexing above to compare how fast '
+                        'each one grew instead.</div>', unsafe_allow_html=True)
 
 # ────────────────────────── Movement ──────────────────────────
 with tabs[4]:
-    st.markdown('<div class="note">How every plan moved between two points in '
-                'time. Pick the distance, then read the summary line.</div>',
-                unsafe_allow_html=True)
+    st.markdown('<div class="note">Where the money actually moved between two '
+                'points in time.</div>', unsafe_allow_html=True)
     horizon = st.radio("Change over", ["One period", "One year"], horizontal=True)
     base_p = prev_p if horizon == "One period" else yoy_p
+
     if base_p is None:
         st.info("The record holds no comparison period here. Move the slider "
                 "forward.")
@@ -611,60 +638,88 @@ with tabs[4]:
              .merge(b.groupby(["state", "plan"], as_index=False)
                     .agg(a0=("assets", "sum"), c0=("accounts", "sum")),
                     on=["state", "plan"]))
+        # Dollar change is the honest unit at network scale. A percentage is
+        # only meaningful next to the size it applies to.
+        m["d_assets"] = m["assets"] - m["a0"]
+        m["d_accounts"] = m["accounts"] - m["c0"]
         m["assets_chg"] = [growth(a, x) for a, x in zip(m["assets"], m["a0"])]
         m["accounts_chg"] = [growth(c, x) for c, x in zip(m["accounts"], m["c0"])]
-        m = m.dropna(subset=["assets_chg", "accounts_chg"])
+        m = m.dropna(subset=["assets_chg"])
 
-        up_a = int((m["assets_chg"] > 0).sum())
-        up_c = int((m["accounts_chg"] > 0).sum())
-        st.markdown(f'<div class="callout">From {blbl} to {q_sel}: '
-                    f'<b>{up_a} of {len(m)}</b> plans grew assets and '
-                    f'<b>{up_c} of {len(m)}</b> grew accounts.</div>',
-                    unsafe_allow_html=True)
+        net = m["d_assets"].sum()
+        net_acct = m["d_accounts"].sum()
+        gain, lose = m[m["d_assets"] > 0], m[m["d_assets"] < 0]
+        top5 = m.nlargest(5, "d_assets")["d_assets"].sum()
+        conc = ratio(top5, net)
+
+        verb = "added" if net >= 0 else "lost"
+        line = (f"From {blbl} to {q_sel} the network {verb} "
+                f"<b>{usd(abs(net))}</b> in assets and "
+                f"<b>{num(abs(net_acct))}</b> accounts. "
+                f"{len(gain)} plans gained and {len(lose)} lost ground.")
+        if net > 0 and not pd.isna(conc) and conc > 0:
+            line += (f" The five biggest movers account for "
+                     f"{pct(conc, signed=False)} of the change.")
+        st.markdown(f'<div class="callout">{line}</div>', unsafe_allow_html=True)
 
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("#### Asset change across plans")
-            f = go.Figure(go.Histogram(x=m["assets_chg"], nbinsx=40,
-                                       marker_color=GREEN, opacity=.85))
-            med = float(m["assets_chg"].median())
-            f.add_vline(x=med, line_dash="dot", line_color=DARK,
-                        annotation_text=f"median {pct(med)}")
-            f.update_xaxes(tickformat="+.0%")
-            st.plotly_chart(fig(f, 330), **PLOT)
+            st.markdown("#### The twelve biggest movers, in dollars")
+            mv = m.reindex(m["d_assets"].abs().sort_values().index).tail(12)
+            f = go.Figure(go.Bar(
+                x=mv["d_assets"], y=mv["plan"].str.slice(0, 34), orientation="h",
+                marker_color=[GREEN if v >= 0 else RED for v in mv["d_assets"]],
+                customdata=np.stack([mv["assets"], mv["assets_chg"]], axis=-1),
+                hovertemplate=("%{y}<br>Change %{x:$,.4s}"
+                               "<br>Now holds %{customdata[0]:$,.4s}"
+                               "<br>That is %{customdata[1]:+.1%}<extra></extra>")))
+            f.add_vline(x=0, line_color=STEEL, line_width=1)
+            f.update_yaxes(tickfont=dict(size=10))
+            f.update_xaxes(tickformat="$.2s")
+            st.plotly_chart(fig(f, 380), **PLOT)
+            st.markdown('<div class="note">Green added assets, red lost them. '
+                        'This is the chart that answers where the money went.</div>',
+                        unsafe_allow_html=True)
         with c2:
-            st.markdown("#### Accounts against assets")
+            st.markdown("#### Every plan, sized by what it holds")
+            size = (m["assets"] / m["assets"].max()) ** 0.5 * 38 + 5
             f = go.Figure(go.Scatter(
                 x=m["assets_chg"], y=m["accounts_chg"], mode="markers",
                 text=m["plan"],
-                marker=dict(color=STEEL, size=8, opacity=.7,
+                marker=dict(size=size, color=STEEL, opacity=.55,
                             line=dict(color="white", width=.5)),
-                hovertemplate="<b>%{text}</b><br>Assets %{x:+.1%}"
-                              "<br>Accounts %{y:+.1%}<extra></extra>"))
+                customdata=np.stack([m["assets"], m["d_assets"]], axis=-1),
+                hovertemplate=("<b>%{text}</b><br>Assets %{x:+.1%}"
+                               "<br>Accounts %{y:+.1%}"
+                               "<br>Holds %{customdata[0]:$,.4s}"
+                               "<br>Change %{customdata[1]:$,.4s}<extra></extra>")))
             f.add_vline(x=0, line_color=MIST)
             f.add_hline(y=0, line_color=MIST)
             f.update_xaxes(tickformat="+.0%", title="Asset change")
             f.update_yaxes(tickformat="+.0%", title="Account change")
-            st.plotly_chart(fig(f, 330), **PLOT)
-        st.markdown('<div class="note">Each dot is one plan. Right of the center '
-                    'line, its assets grew. Above it, its accounts grew. A crowd '
-                    'in the upper left is the shape of a down market: balances '
-                    'fell while families kept opening accounts.</div>',
-                    unsafe_allow_html=True)
+            st.plotly_chart(fig(f, 380), **PLOT)
+            st.markdown('<div class="note">Each bubble is a plan, sized by the '
+                        'assets it holds. Big percentage swings sit on the small '
+                        'bubbles, which is why percentages alone mislead.</div>',
+                        unsafe_allow_html=True)
 
-        show = m.sort_values("assets_chg", ascending=False)[
-            ["state", "plan", "assets", "assets_chg", "accounts",
-             "accounts_chg"]].copy()
+        st.markdown("#### Every plan, ordered by dollars gained or lost")
+        show = m.sort_values("d_assets", ascending=False)[
+            ["state", "plan", "assets", "d_assets", "assets_chg",
+             "accounts", "d_accounts"]].copy()
         show["assets_chg"] *= 100
-        show["accounts_chg"] *= 100
         st.dataframe(
-            show, hide_index=True, width="stretch", height=320,
+            show, hide_index=True, width="stretch", height=340,
             column_config={
                 "state": "State", "plan": "Plan",
-                "assets": st.column_config.NumberColumn("Assets", format="$%.0f"),
-                "assets_chg": st.column_config.NumberColumn("Assets change", format="%.1f%%"),
-                "accounts": st.column_config.NumberColumn("Accounts", format="%d"),
-                "accounts_chg": st.column_config.NumberColumn("Accounts change", format="%.1f%%")})
+                "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
+                "d_assets": st.column_config.NumberColumn("Change ($)", format="compact"),
+                "assets_chg": st.column_config.NumberColumn("Change (%)", format="%.1f%%"),
+                "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
+                "d_accounts": st.column_config.NumberColumn("Accounts change", format="localized")})
+        st.markdown('<div class="note">Sorted by dollars, not percent. A small '
+                    'plan can post a large percentage on very little money, so '
+                    'read the two columns together.</div>', unsafe_allow_html=True)
 
 # ────────────────────────── Data & Notes ──────────────────────────
 with tabs[5]:
@@ -689,8 +744,8 @@ with tabs[5]:
                  column_config={
                      "quarter": "Period", "state": "State", "plan": "Plan",
                      "type": "Type",
-                     "assets": st.column_config.NumberColumn("Assets", format="$%.0f"),
-                     "accounts": st.column_config.NumberColumn("Accounts", format="%d")})
+                     "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
+                     "accounts": st.column_config.NumberColumn("Accounts", format="localized")})
 
     d1, d2 = st.columns(2)
     with d1:
@@ -727,6 +782,14 @@ file was likely loaded a second time as Q1 2023. Separately, Alabama PACT
 reports $76.1M in 2022Q1 against $232M to $257M in the other three quarters
 while accounts barely move. Both are kept as reported. Nothing was silently
 corrected.
+
+**One plan, two spellings.** The source spells 15 plans two ways, changing
+punctuation or casing partway through. Virginia CollegeAmerica also appears as
+"Virginia - CollegeAmerica." Left alone, one plan reads as two and its history
+breaks in half. This dashboard merges them on a punctuation-blind key and shows
+the most recent spelling, naming the alias on the Plans tab. No two spellings
+ever report in the same period, so nothing double counts, and the loader asserts
+that on every run.
 
 **Two eras in one record.** Through 2008Q4 the data arrives as one combined
 line per state, labelled with the state name rather than a plan name. From
