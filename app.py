@@ -119,6 +119,44 @@ def growth(now, before):
     return np.nan if pd.isna(r) else r - 1
 
 
+def money_ticks(fig_obj, axis="yaxis", series=None):
+    """Relabel a money axis in $B/$M so it never shows Plotly's SI 'G'.
+
+    series: the values plotted on that axis, used to size the ticks.
+    Handles axes that span negative to positive (e.g. dollar change).
+    """
+    clean = [] if series is None else [
+        v for v in list(series) if v is not None and not pd.isna(v)]
+    if not clean:
+        return fig_obj
+    lo, hi = min(clean + [0]), max(clean + [0])
+    span = max(abs(lo), abs(hi))
+    if span == 0:
+        return fig_obj
+    if span >= 1e9:
+        unit, suf = 1e9, "B"
+        step = 1e11 if span >= 5e11 else 1e10 if span >= 5e10 else 1e9
+    elif span >= 1e6:
+        unit, suf = 1e6, "M"
+        step = 1e8 if span >= 5e8 else 1e7 if span >= 5e7 else 1e6
+    else:
+        unit, suf, step = 1e3, "K", 1e3
+    start = int(lo / step) - 1 if lo < 0 else 0
+    end = int(hi / step) + 2
+    ticks = [i * step for i in range(start, end)]
+    ticks = [t for t in ticks if lo - step / 2 <= t <= hi + step / 2 or t == 0]
+
+    def lab(t):
+        if t == 0:
+            return "$0"
+        s = "-" if t < 0 else ""
+        return f"{s}${abs(t)/unit:,.0f}{suf}"
+
+    text = [lab(t) for t in ticks]
+    fig_obj.update_layout(**{axis: dict(tickvals=ticks, ticktext=text)})
+    return fig_obj
+
+
 # ────────────────────────── data ──────────────────────────
 PREPAID = re.compile(
     r"prepaid|guaranteed|tuition promise|tuition plan|u\.plan|\(MET\)|\(GET\)|"
@@ -305,7 +343,9 @@ with tabs[0]:
         f = go.Figure(go.Scatter(x=n["t"], y=n["assets"], fill="tozeroy",
                                  line=dict(color=GREEN, width=2),
                                  fillcolor="rgba(58,137,22,.12)",
-                                 hovertemplate="%{x|%Y Q%q}<br>%{y:$,.4s}<extra></extra>"))
+                                 hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra></extra>",
+                                 customdata=[usd(v) for v in n["assets"]]))
+        money_ticks(f, "yaxis", n["assets"])
         st.plotly_chart(fig(f), **PLOT)
     with c2:
         st.markdown("#### Open accounts")
@@ -350,10 +390,13 @@ with tabs[0]:
         f = go.Figure()
         f.add_scatter(x=tt.index, y=tt["Savings"], name="Savings", stackgroup="a",
                       line=dict(color=GREEN, width=1),
-                      hovertemplate="%{x|%Y Q%q}<br>%{y:$,.4s}<extra>Savings</extra>")
+                      customdata=[usd(v) for v in tt["Savings"]],
+                      hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Savings</extra>")
         f.add_scatter(x=tt.index, y=tt["Prepaid"], name="Prepaid", stackgroup="a",
                       line=dict(color=AMBER, width=1),
-                      hovertemplate="%{x|%Y Q%q}<br>%{y:$,.4s}<extra>Prepaid</extra>")
+                      customdata=[usd(v) for v in tt["Prepaid"]],
+                      hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Prepaid</extra>")
+        money_ticks(f, "yaxis", (tt["Savings"] + tt["Prepaid"]))
         st.plotly_chart(fig(f, 300), **PLOT)
         st.markdown('<div class="note">Savings plans invest in markets. Prepaid '
                     'plans lock in tuition prices. Type is read from the plan '
@@ -366,8 +409,10 @@ with tabs[0]:
         f = go.Figure(go.Bar(
             x=top["assets"], y=top["plan"].str.slice(0, 38), orientation="h",
             marker_color=[AMBER if t == "Prepaid" else GREEN for t in top["type"]],
-            hovertemplate="%{y}<br>%{x:$,.4s}<extra></extra>"))
+            customdata=[usd(v) for v in top["assets"]],
+            hovertemplate="%{y}<br>%{customdata}<extra></extra>"))
         f.update_yaxes(tickfont=dict(size=10))
+        money_ticks(f, "xaxis", top["assets"])
         st.plotly_chart(fig(f, 300), **PLOT)
         share = ratio(cur.groupby("plan")["assets"].sum().nlargest(10).sum(), A)
         st.markdown(f'<div class="note">The ten largest plans hold '
@@ -415,7 +460,7 @@ with tabs[1]:
             customdata=np.stack([mapped["state"], mapped["assets"],
                                  mapped["accounts"], mapped["avg"],
                                  mapped["plans"]], axis=-1),
-            hovertemplate=("<b>%{customdata[0]}</b><br>Assets %{customdata[1]:$,.4s}"
+            hovertemplate=("<b>%{customdata[0]}</b><br>Assets %{customdata[1]:$,.0f}"
                            "<br>Accounts %{customdata[2]:,.0f}"
                            "<br>Avg balance %{customdata[3]:$,.0f}"
                            "<br>Plans %{customdata[4]}<extra></extra>")))
@@ -428,7 +473,7 @@ with tabs[1]:
         hide_index=True, width="stretch", height=280,
         column_config={
             "state": "State", "plans": "Plans",
-            "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
+            "assets": st.column_config.NumberColumn("Assets", format="dollar"),
             "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
             "avg": st.column_config.NumberColumn("Avg balance ($)", format="localized")})
 
@@ -456,11 +501,13 @@ with tabs[1]:
     f = go.Figure()
     f.add_scatter(x=g["t"], y=g["assets"], name="Assets",
                   line=dict(color=GREEN, width=2),
-                  hovertemplate="%{x|%Y Q%q}<br>%{y:$,.4s}<extra>Assets</extra>")
+                  customdata=[usd(v) for v in g["assets"]],
+                  hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Assets</extra>")
     f.add_scatter(x=g["t"], y=g["accounts"], name="Accounts", yaxis="y2",
                   line=dict(color=STEEL, width=2, dash="dot"),
                   hovertemplate="%{x|%Y Q%q}<br>%{y:,.0f}<extra>Accounts</extra>")
     f.update_layout(yaxis2=dict(overlaying="y", side="right", showgrid=False))
+    money_ticks(f, "yaxis", g["assets"])
     st.plotly_chart(fig(f, 340), **PLOT)
 
     st.markdown(f"#### Plans in {state}, {q_sel}")
@@ -475,7 +522,7 @@ with tabs[1]:
         column_config={
             "plan": st.column_config.TextColumn("Plan", width="large"),
             "type": "Type",
-            "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
+            "assets": st.column_config.NumberColumn("Assets", format="dollar"),
             "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
             "avg": st.column_config.NumberColumn("Avg balance ($)", format="localized")})
 
@@ -546,7 +593,9 @@ with tabs[2]:
                                  mode="lines+markers" if len(pf) < 6 else "lines",
                                  line=dict(color=GREEN, width=2),
                                  fillcolor="rgba(58,137,22,.12)",
-                                 hovertemplate="%{x|%Y Q%q}<br>%{y:$,.4s}<extra></extra>"))
+                                 customdata=[usd(v) for v in pf["assets"]],
+                                 hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra></extra>"))
+        money_ticks(f, "yaxis", pf["assets"])
         st.plotly_chart(fig(f, 300), **PLOT)
     with c2:
         st.markdown("#### Accounts")
@@ -563,7 +612,7 @@ with tabs[2]:
     st.dataframe(hist.iloc[::-1], hide_index=True, width="stretch", height=280,
                  column_config={
                      "quarter": "Period",
-                     "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
+                     "assets": st.column_config.NumberColumn("Assets", format="dollar"),
                      "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
                      "avg": st.column_config.NumberColumn("Avg balance ($)", format="localized")})
     st.download_button("Download this plan's history",
@@ -606,7 +655,7 @@ with tabs[3]:
             if idx and len(y) and y.iloc[0]:
                 y = y / y.iloc[0] * 100
             f.add_scatter(x=g["t"], y=y, name=name, mode="lines",
-                          hovertemplate="%{x|%Y Q%q}<br>%{y:,.4s}<extra>"
+                          hovertemplate="%{x|%Y Q%q}<br>%{y:,.0f}<extra>"
                                         + name + "</extra>")
         if idx:
             f.add_hline(y=100, line_dash="dot", line_color=STEEL)
@@ -670,12 +719,12 @@ with tabs[4]:
                 x=mv["d_assets"], y=mv["plan"].str.slice(0, 34), orientation="h",
                 marker_color=[GREEN if v >= 0 else RED for v in mv["d_assets"]],
                 customdata=np.stack([mv["assets"], mv["assets_chg"]], axis=-1),
-                hovertemplate=("%{y}<br>Change %{x:$,.4s}"
-                               "<br>Now holds %{customdata[0]:$,.4s}"
+                hovertemplate=("%{y}<br>Change %{x:$,.0f}"
+                               "<br>Now holds %{customdata[0]:$,.0f}"
                                "<br>That is %{customdata[1]:+.1%}<extra></extra>")))
             f.add_vline(x=0, line_color=STEEL, line_width=1)
             f.update_yaxes(tickfont=dict(size=10))
-            f.update_xaxes(tickformat="$.2s")
+            money_ticks(f, "xaxis", list(mv["d_assets"]) + [-x for x in mv["d_assets"]])
             st.plotly_chart(fig(f, 380), **PLOT)
             st.markdown('<div class="note">Green added assets, red lost them. '
                         'This is the chart that answers where the money went.</div>',
@@ -691,8 +740,8 @@ with tabs[4]:
                 customdata=np.stack([m["assets"], m["d_assets"]], axis=-1),
                 hovertemplate=("<b>%{text}</b><br>Assets %{x:+.1%}"
                                "<br>Accounts %{y:+.1%}"
-                               "<br>Holds %{customdata[0]:$,.4s}"
-                               "<br>Change %{customdata[1]:$,.4s}<extra></extra>")))
+                               "<br>Holds %{customdata[0]:$,.0f}"
+                               "<br>Change %{customdata[1]:$,.0f}<extra></extra>")))
             f.add_vline(x=0, line_color=MIST)
             f.add_hline(y=0, line_color=MIST)
             f.update_xaxes(tickformat="+.0%", title="Asset change")
@@ -712,8 +761,8 @@ with tabs[4]:
             show, hide_index=True, width="stretch", height=340,
             column_config={
                 "state": "State", "plan": "Plan",
-                "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
-                "d_assets": st.column_config.NumberColumn("Change ($)", format="compact"),
+                "assets": st.column_config.NumberColumn("Assets", format="dollar"),
+                "d_assets": st.column_config.NumberColumn("Change", format="dollar"),
                 "assets_chg": st.column_config.NumberColumn("Change (%)", format="%.1f%%"),
                 "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
                 "d_accounts": st.column_config.NumberColumn("Accounts change", format="localized")})
@@ -744,7 +793,7 @@ with tabs[5]:
                  column_config={
                      "quarter": "Period", "state": "State", "plan": "Plan",
                      "type": "Type",
-                     "assets": st.column_config.NumberColumn("Assets ($)", format="compact"),
+                     "assets": st.column_config.NumberColumn("Assets", format="dollar"),
                      "accounts": st.column_config.NumberColumn("Accounts", format="localized")})
 
     d1, d2 = st.columns(2)
@@ -782,6 +831,16 @@ file was likely loaded a second time as Q1 2023. Separately, Alabama PACT
 reports $76.1M in 2022Q1 against $232M to $257M in the other three quarters
 while accounts barely move. Both are kept as reported. Nothing was silently
 corrected.
+
+**2026Q1 and the transposed rows.** The published website file for 3/31/2026
+prints ten rows under the wrong plan names: Nevada (Vanguard and Wealthfront),
+South Carolina (Future Scholar Advisor and Direct), Virginia (Invest529 and
+Prepaid529), and Texas (a four way rotation across all four plans). The survey
+submissions and the prior quarter agree with each other in every case, so this
+dashboard loads the survey figures. Each corrected row carries a note. National
+totals are unaffected, since every swap sits inside one state, and 2026Q1 still
+reconciles to the published totals row: accounts to the unit, assets to three
+cents of the source's own rounding.
 
 **One plan, two spellings.** The source spells 15 plans two ways, changing
 punctuation or casing partway through. Virginia CollegeAmerica also appears as
