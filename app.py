@@ -247,16 +247,28 @@ open or close accounts, so it is the cleaner read on participation.
 **Savings vs prepaid**: savings plans invest contributions in markets. Prepaid
 plans let families lock in tuition at today's prices.
 
-Pick any reporting period with the slider below. Every chart updates.
+Pick any reporting period with the slider below, and choose whether to view
+savings plans, prepaid plans, or the total of both. Every figure and chart on
+the page follows both choices.
 """)
     q_sel = st.select_slider("Reporting period", options=LABELS, value=LABELS[-1])
     p_sel = pd.Period(q_sel, freq="Q")
+    type_sel = st.radio(
+        "Plan type", ["Total", "Savings", "Prepaid"], index=0,
+        help="Total covers every plan. Savings plans invest in markets. "
+             "Prepaid plans lock in tuition prices. Every figure and chart "
+             "on the page follows this choice.")
     st.markdown(
         f'<div class="note">Data submitted by states and consolidated by '
         f'The 529 Network. {len(LABELS)} reporting periods, {LABELS[0]} to '
         f'{LABELS[-1]}. Reporting runs quarterly from 2021 and is sparser before '
         f'that, so the timeline is not evenly spaced.</div>',
         unsafe_allow_html=True)
+
+# The type filter is dashboard wide. Everything below reads the filtered frame,
+# so headline figures, charts, tables, and downloads all agree with the choice.
+if type_sel != "Total":
+    df = df[df["type"] == type_sel]
 
 cur = df[df["period"] == p_sel]
 i = QS.index(p_sel)
@@ -269,8 +281,11 @@ prior_lbl = f"{prev_p.year}Q{prev_p.quarter}" if prev_p is not None else "n/a"
 # ────────────────────────── header ──────────────────────────
 st.markdown('<div class="eyebrow">Member dashboard</div>', unsafe_allow_html=True)
 st.markdown('<div class="pagetitle">Assets & Accounts</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="subtitle">Total assets and open accounts for every '
-            f'529 plan on record. Showing {q_sel}.</div>', unsafe_allow_html=True)
+scope_txt = {"Total": "every 529 plan on record",
+             "Savings": "savings plans only",
+             "Prepaid": "prepaid plans only"}[type_sel]
+st.markdown(f'<div class="subtitle">Total assets and open accounts for '
+            f'{scope_txt}. Showing {q_sel}.</div>', unsafe_allow_html=True)
 
 # Count real jurisdictions. PRIVATE is the multistate plan, not a state.
 geo = cur[cur["state"] != "PRIVATE"]["state"].unique()
@@ -298,7 +313,10 @@ st.markdown(f"""
 
 def tell_the_story() -> str:
     """One accurate paragraph about the selected period, written from the data."""
-    parts = [f"At the end of {q_sel}, families held {usd(A)} across "
+    lead = {"Total": "families held",
+            "Savings": "families held, in savings plans,",
+            "Prepaid": "families held, in prepaid plans,"}[type_sel]
+    parts = [f"At the end of {q_sel}, {lead} {usd(A)} across "
              f"{cur['plan'].nunique()} plans in {num(C)} open accounts."]
     ga, gc = growth(A, A0), growth(C, C0)
     if not pd.isna(ga) and not pd.isna(gc):
@@ -313,17 +331,17 @@ def tell_the_story() -> str:
                          "left.")
     big = cur.groupby("state")["assets"].sum()
     top_state = big.idxmax()
+    scope_word = "national total" if type_sel == "Total" else f"{type_sel.lower()} total"
     parts.append(f"{top_state} holds the most, {usd(big.max())}, about "
-                 f"{pct(ratio(big.max(), A), signed=False)} of the national "
-                 f"total.")
+                 f"{pct(ratio(big.max(), A), signed=False)} of the "
+                 f"{scope_word}.")
     return " ".join(parts)
 
 
 st.markdown(f'<div class="callout">{tell_the_story()}</div>',
             unsafe_allow_html=True)
 
-tabs = st.tabs(["National", "States", "Plans", "Compare", "Movement",
-                "Data & Notes"])
+tabs = st.tabs(["National", "States", "Plans", "Data"])
 
 
 # ────────────────────────── National ──────────────────────────
@@ -382,26 +400,34 @@ with tabs[0]:
                     'looks like: total assets divided by total accounts.</div>',
                     unsafe_allow_html=True)
 
-    c5, c6 = st.columns(2)
-    with c5:
-        st.markdown("#### Savings and prepaid assets")
-        tt = (df[df["Year"] >= 2003].groupby(["t", "type"])["assets"].sum()
-              .unstack().reindex(columns=["Savings", "Prepaid"]).fillna(0))
-        f = go.Figure()
-        f.add_scatter(x=tt.index, y=tt["Savings"], name="Savings", stackgroup="a",
-                      line=dict(color=GREEN, width=1),
-                      customdata=[usd(v) for v in tt["Savings"]],
-                      hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Savings</extra>")
-        f.add_scatter(x=tt.index, y=tt["Prepaid"], name="Prepaid", stackgroup="a",
-                      line=dict(color=AMBER, width=1),
-                      customdata=[usd(v) for v in tt["Prepaid"]],
-                      hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Prepaid</extra>")
-        money_ticks(f, "yaxis", (tt["Savings"] + tt["Prepaid"]))
-        st.plotly_chart(fig(f, 300), **PLOT)
-        st.markdown('<div class="note">Savings plans invest in markets. Prepaid '
-                    'plans lock in tuition prices. Type is read from the plan '
-                    'name, and the chart starts in 2003, the first year the '
-                    'record separates the two.</div>', unsafe_allow_html=True)
+    # The savings vs prepaid split only says something when both are in scope.
+    # Under a type filter it collapses to one series, so it steps aside and the
+    # largest-plans chart takes the full width.
+    if type_sel == "Total":
+        c5, c6 = st.columns(2)
+    else:
+        c5, c6 = None, st.container()
+
+    if c5 is not None:
+        with c5:
+            st.markdown("#### Savings and prepaid assets")
+            tt = (df[df["Year"] >= 2003].groupby(["t", "type"])["assets"].sum()
+                  .unstack().reindex(columns=["Savings", "Prepaid"]).fillna(0))
+            f = go.Figure()
+            f.add_scatter(x=tt.index, y=tt["Savings"], name="Savings", stackgroup="a",
+                          line=dict(color=GREEN, width=1),
+                          customdata=[usd(v) for v in tt["Savings"]],
+                          hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Savings</extra>")
+            f.add_scatter(x=tt.index, y=tt["Prepaid"], name="Prepaid", stackgroup="a",
+                          line=dict(color=AMBER, width=1),
+                          customdata=[usd(v) for v in tt["Prepaid"]],
+                          hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Prepaid</extra>")
+            money_ticks(f, "yaxis", (tt["Savings"] + tt["Prepaid"]))
+            st.plotly_chart(fig(f, 300), **PLOT)
+            st.markdown('<div class="note">Savings plans invest in markets. Prepaid '
+                        'plans lock in tuition prices. Type is read from the plan '
+                        'name, and the chart starts in 2003, the first year the '
+                        'record separates the two.</div>', unsafe_allow_html=True)
     with c6:
         st.markdown(f"#### The fifteen largest plans, {q_sel}")
         top = (cur.groupby(["plan", "type"], as_index=False)["assets"].sum()
@@ -414,10 +440,9 @@ with tabs[0]:
         f.update_yaxes(tickfont=dict(size=10))
         money_ticks(f, "xaxis", top["assets"])
         st.plotly_chart(fig(f, 300), **PLOT)
-        share = ratio(cur.groupby("plan")["assets"].sum().nlargest(10).sum(), A)
-        st.markdown(f'<div class="note">The ten largest plans hold '
-                    f'{pct(share, signed=False)} of all assets. Amber marks '
-                    f'prepaid.</div>', unsafe_allow_html=True)
+        if type_sel != "Savings":
+            st.markdown('<div class="note">Amber marks prepaid.</div>',
+                        unsafe_allow_html=True)
 
 # ────────────────────────── States ──────────────────────────
 with tabs[1]:
@@ -491,8 +516,6 @@ with tabs[1]:
       <div class="cell"><div class="v">{num(sac)}</div><div class="k">Accounts</div>
         <div class="d">{dlt(growth(sac, sp["accounts"].sum() if len(sp) else np.nan))} vs {prior_lbl}</div></div>
       <div class="cell"><div class="v">{usd(ratio(sa, sac))}</div><div class="k">Average balance</div></div>
-      <div class="cell"><div class="v">{pct(ratio(sa, A), signed=False)}</div>
-        <div class="k">Share of national assets</div></div>
     </div>""", unsafe_allow_html=True)
 
     g = (sd.groupby("t", as_index=False)
@@ -537,6 +560,9 @@ with tabs[2]:
         f"Include the {len(retired)} plans that no longer report",
         help="Plans that closed, merged, or were renamed. Their history stops "
              "on their last reporting period.")
+    # Every reporting period in the record contains both savings and prepaid
+    # plans, checked across all 70, so the type filter cannot empty this list.
+    # If a future quarter ever breaks that, this is the line that will show it.
     universe = sorted(current) + (retired if show_retired else [])
     biggest = latest.groupby("plan")["assets"].sum().idxmax()
     plan = st.selectbox("Plan", universe, index=universe.index(biggest))
@@ -624,6 +650,16 @@ with tabs[2]:
                 'the record reports one combined line per state instead of '
                 'naming individual plans.</div>', unsafe_allow_html=True)
 
+# ══════════════════════════════════════════════════════════════════════════
+# WITHHELD FROM THE PORTAL
+#
+# The Compare and Movement tabs are held back for now. The working code is
+# kept verbatim below so it can be restored without being rebuilt. To bring
+# either one back: add its label to the st.tabs([...]) list, unindent the
+# block out of this string, and renumber its tabs[n] index. Nothing else
+# about it needs to change.
+# ══════════════════════════════════════════════════════════════════════════
+WITHHELD_COMPARE_AND_MOVEMENT = '''
 # ────────────────────────── Compare ──────────────────────────
 with tabs[3]:
     c1, c2, c3 = st.columns(3)
@@ -769,9 +805,10 @@ with tabs[4]:
         st.markdown('<div class="note">Sorted by dollars, not percent. A small '
                     'plan can post a large percentage on very little money, so '
                     'read the two columns together.</div>', unsafe_allow_html=True)
+'''
 
-# ────────────────────────── Data & Notes ──────────────────────────
-with tabs[5]:
+# ────────────────────────── Data ──────────────────────────
+with tabs[3]:
     st.markdown('<div class="note">The record itself. Filter it, read it, take it '
                 'with you as a CSV or Excel file.</div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
@@ -809,6 +846,15 @@ with tabs[5]:
                            mime="application/vnd.openxmlformats-officedocument"
                                 ".spreadsheetml.sheet")
 
+# ══════════════════════════════════════════════════════════════════════════
+# WITHHELD FROM THE PORTAL
+#
+# The notes section of the Data tab is held back for now. Kept verbatim so
+# the provenance write-up and the non-reporting-rows table can be restored
+# without being rewritten. To bring it back, unindent this block out of the
+# string and place it at the end of the Data tab.
+# ══════════════════════════════════════════════════════════════════════════
+WITHHELD_DATA_NOTES = '''
     st.divider()
     st.markdown("#### Notes on the record")
     nr = full[~full["reporting"]][["quarter", "state", "plan", "note"]]
@@ -869,6 +915,7 @@ convenience, not a field of record.
         st.dataframe(nr, hide_index=True, width="stretch", height=300,
                      column_config={"quarter": "Period", "state": "State",
                                     "plan": "Plan", "note": "Note"})
+'''
 
 st.markdown(f'<div style="border-top:1px solid {MIST};margin-top:1.6rem;'
             f'padding-top:.6rem" class="note">The 529 Network · Data submitted by '

@@ -78,3 +78,56 @@ Ordered by dollars, not percent. Sorting by percent put a $2.5M plan (+59.8%)
 above Virginia CollegeAmerica, which added $2.08B. The scatter sizes each
 bubble by the assets the plan holds, so the large percentage swings visibly
 belong to the small plans.
+
+## 2026Q1: transposed rows in the published file
+The website PDF for 3/31/2026 prints ten rows under the wrong plan names:
+
+| State | Affected |
+|---|---|
+| Nevada | Vanguard and Wealthfront swapped |
+| South Carolina | Future Scholar Advisor and Direct swapped |
+| Virginia | Invest529 and Prepaid529 swapped |
+| Texas | four way rotation across all four plans |
+
+The survey submissions and the prior quarter agree with each other in every
+case, so the loader uses the survey figures. Each corrected row carries a Note.
+After correction every one of the ten moves within 10% quarter over quarter;
+as printed, Vanguard would have fallen 98% and Wealthfront risen 4,600%.
+
+National totals are unaffected, since every swap sits inside a single state.
+2026Q1 reconciles to the published totals row: accounts exactly, assets to
+within three cents of the source's own rounding.
+
+Also in 2026Q1: Kentucky's Affordable Prepaid Tuition reports 1,127 accounts
+against zero assets in both sources, Mississippi Prepaid's figures are carried
+from 12-31-25, and two Kansas plans (Learning Quest Advisor, Schwab Learning
+Quest) stop reporting.
+
+## Dashboard-level plan type filter
+The sidebar carries a Total / Savings / Prepaid selector, defaulting to Total.
+It filters the whole dashboard: headline figures, every chart, both detail
+tabs, the data table, and the CSV and Excel downloads all follow the choice.
+Savings plus Prepaid reconciles to Total in every period.
+
+Two things adapt to it rather than breaking:
+- the savings vs prepaid split chart appears only under Total, since under a
+  filter it would collapse to a single series. The largest-plans chart takes
+  the full width instead.
+- the narrative paragraph names the scope, so a filtered view never reads as
+  though it were the national total.
+
+## Withheld sections
+Some sections are held back from the portal for now. The code is kept verbatim
+in the app rather than deleted, so it can be restored without being rebuilt:
+
+| Constant | Contains |
+|---|---|
+| `WITHHELD_COMPARE_AND_MOVEMENT` | the Compare and Movement tabs |
+| `WITHHELD_DATA_NOTES` | the notes section of the Data tab |
+
+To restore a tab: add its label back to the `st.tabs([...])` list, unindent the
+block out of the string, and renumber its `tabs[n]` index. Nothing else about
+it needs to change.
+
+Also removed from the live view for now: the share-of-national-assets figure on
+the States tab, and the ten-largest-plans concentration caption on National.
