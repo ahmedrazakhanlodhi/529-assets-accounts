@@ -34,7 +34,8 @@ ASSETS = ROOT / "assets"
 PLOT_X0, PLOT_X1 = 34, 420
 HERO_X = 452
 GRIDLAB_DX = 13      # left axis labels sit clear of the first bar
-RGRIDLAB_DX = 5      # right axis labels sit clear of the hero block
+RGRIDLAB_DX = 12     # clears the last bar, which is centred on PLOT_X1
+                     # and so reaches PLOT_X1 + bw/2
 
 
 def x_for(i, n):

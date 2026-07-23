@@ -222,3 +222,17 @@ Verified across eight editions: no SVG text outside its viewBox, no horizontal
 overflow in any panel, deck clear of the head by 24px, and the page exactly
 1056px tall. The only element that overflows is the decorative watermark, which
 is clipped deliberately.
+
+### Layout check
+`python infographic/check_layout.py` renders nine editions and asserts, by
+measuring bounding boxes in the browser rather than by eye, that no text sits
+outside its viewBox, no axis label is hidden behind a bar or running into the
+hero, the page is exactly 1056px, and the footer fits. Run it after touching
+the template or the chart geometry. Every assertion in it corresponds to a bug
+that shipped once.
+
+One worth calling out: bars are centred on the axis end points, so the first
+and last bar each extend half a bar width past the plot edge. Axis labels have
+to clear `bw/2`, not a token few pixels. Getting this wrong on the left hid the
+leading digit of the accounts axis; getting it wrong on the right hid the
+leading digit of the balance axis.
