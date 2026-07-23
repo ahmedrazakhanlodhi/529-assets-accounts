@@ -202,3 +202,23 @@ live data. All are fixed:
 | Caption hard-coded "the two periods ... in both cases" | Wrong for every edition with one dip or none | Caption is derived from the annotations actually drawn, and recovery is only claimed when the series shows it |
 | Average-account panel styled but never rendered | The figures were computed and dropped | Panel restored to the layout |
 | Only three points carried value labels | Far sparser than the published sheet | Every point on both charts is labelled, with annotated years and the endpoint emphasised |
+
+### Layout faults found by driving the generator across editions
+The first live run exposed overflow bugs that the single hand-authored JSON
+never triggered. All are fixed and verified by measuring rendered bounding
+boxes rather than by eye:
+
+| Fault | Cause | Fix |
+|---|---|---|
+| Accounts hero clipped to "17.93N" | Hero began at x=466 in a 560-wide viewBox; the label needs ~96px | Plot narrowed, hero moved to x=452 |
+| Left axis read "1" instead of "10" | The first bar is centred on the axis and covered the label's last digit | Axis labels moved clear of the bar |
+| Left axis title read "NTS, M" | "accounts, M" was anchored at its right edge, running off canvas | Anchored from the left margin instead |
+| Right axis values sat on the hero text | Both occupied the same band | Right labels pulled in, hero moved left |
+| Average-account values overlapped the arrow | Flex columns shrank below their text | Columns fixed to content, shorter date, smaller face |
+| "Plans reporting" and "Compare plans" wrapped | Panels too narrow for their titles | Row rebalanced, titles set to not wrap |
+| Deck lost its last line | The head flex-shrank under the taller panel row | Head no longer shrinks |
+
+Verified across eight editions: no SVG text outside its viewBox, no horizontal
+overflow in any panel, deck clear of the head by 24px, and the page exactly
+1056px tall. The only element that overflows is the decorative watermark, which
+is clipped deliberately.

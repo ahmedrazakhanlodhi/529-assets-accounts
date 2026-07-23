@@ -31,8 +31,10 @@ from jinja2 import Template
 ROOT = pathlib.Path(__file__).parent
 ASSETS = ROOT / "assets"
 
-PLOT_X0, PLOT_X1 = 30, 452
-HERO_X = 466
+PLOT_X0, PLOT_X1 = 34, 420
+HERO_X = 452
+GRIDLAB_DX = 13      # left axis labels sit clear of the first bar
+RGRIDLAB_DX = 5      # right axis labels sit clear of the hero block
 
 
 def x_for(i, n):
@@ -68,7 +70,7 @@ def area_chart(cfg, as_of_short, label_years):
     for gv in range(200, int(ymax) + 1, 200):
         gy = y_for(gv)
         o.append(f'<line x1="{PLOT_X0}" y1="{gy:.1f}" x2="{PLOT_X1}" y2="{gy:.1f}" class="grid"/>'
-                 f'<text x="{PLOT_X0 - 6}" y="{gy + 2.6:.1f}" class="gridlab">{gv}</text>')
+                 f'<text x="{PLOT_X0 - GRIDLAB_DX}" y="{gy + 2.6:.1f}" class="gridlab">{gv}</text>')
 
     o.append(f'<path d="{area}" fill="url(#leafgrad)"/>')
     o.append(f'<path d="{line}" class="curve"/>')
@@ -133,9 +135,9 @@ def decomposition_chart(acc_cfg, avg_series, as_of_short, avg_hero):
     for gv in range(5, int(n_max) + 1, 5):
         gy = yn(gv)
         o.append(f'<line x1="{PLOT_X0}" y1="{gy:.1f}" x2="{PLOT_X1}" y2="{gy:.1f}" class="grid"/>'
-                 f'<text x="{PLOT_X0 - 6}" y="{gy + 2.6:.1f}" class="gridlab">{gv}</text>')
+                 f'<text x="{PLOT_X0 - GRIDLAB_DX}" y="{gy + 2.6:.1f}" class="gridlab">{gv}</text>')
     for gv in range(10000, int(a_max) + 1, 10000):
-        o.append(f'<text x="{PLOT_X1 + 6}" y="{ya(gv) + 2.6:.1f}" class="gridlab r">'
+        o.append(f'<text x="{PLOT_X1 + RGRIDLAB_DX}" y="{ya(gv) + 2.6:.1f}" class="gridlab r">'
                  f'{gv // 1000}k</text>')
 
     for i, p in enumerate(pts):
@@ -147,8 +149,8 @@ def decomposition_chart(acc_cfg, avg_series, as_of_short, avg_hero):
                  f'class="barlab{" hi" if last else ""}">{p["value"]:.1f}</text>')
         o.append(f'<text x="{x:.1f}" y="184" class="ylab">{p["year"]}</text>')
 
-    o.append(f'<text x="{PLOT_X0 - 6}" y="{y1 - 6:.1f}" class="axlab">accounts, M</text>')
-    o.append(f'<text x="{PLOT_X1 + 6}" y="{y1 - 6:.1f}" class="axlab r">avg balance</text>')
+    o.append(f'<text x="0" y="{y1 - 6:.1f}" class="axlab">accounts, M</text>')
+    o.append(f'<text x="{PLOT_X1 + RGRIDLAB_DX}" y="{y1 - 6:.1f}" class="axlab r">avg balance</text>')
 
     path = " ".join(f"{'M' if i == 0 else 'L'}{x_for(i, n):.1f},{ya(v):.1f}"
                     for i, v in enumerate(avg_series))
@@ -157,7 +159,7 @@ def decomposition_chart(acc_cfg, avg_series, as_of_short, avg_hero):
         o.append(f'<circle cx="{x_for(i, n):.1f}" cy="{ya(v):.1f}" r="1.9" class="avgdot"/>')
 
     ey = yn(pts[-1]["value"])
-    o.append(f'<line x1="{PLOT_X1 + 26}" y1="{ey:.1f}" x2="{HERO_X - 6}" y2="{ey:.1f}" class="leader"/>')
+    o.append(f'<line x1="{PLOT_X1 + 24}" y1="{ey:.1f}" x2="{HERO_X - 6}" y2="{ey:.1f}" class="leader"/>')
     o.append(f'<text x="{HERO_X}" y="{ey + 8:.1f}" class="hero">{acc_cfg["hero_label"]}</text>'
              f'<text x="{HERO_X}" y="{ey + 22:.1f}" class="herocap">open accounts</text>'
              f'<text x="{HERO_X}" y="{ey + 40:.1f}" class="hero sm">{avg_hero}</text>'
@@ -299,7 +301,7 @@ def derive_spec(df, period, first_year=2012, url="https://529network.org"):
             "title": "Average account size",
             "from_year": str(years[0]),
             "from_value": f"${first_avg:,.0f}",
-            "to_label": f"As of {MONTH[q]}, {year}",
+            "to_label": f"{SHORT[q]}, {year}",
             "to_value": f"${last_avg:,.0f}",
             "delta": f"{delta:+.0%}",
             "note": (f"Compares {years[0]} with {years[-1]}. Derived figure, "
