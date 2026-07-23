@@ -231,8 +231,16 @@ hero, the page is exactly 1056px, and the footer fits. Run it after touching
 the template or the chart geometry. Every assertion in it corresponds to a bug
 that shipped once.
 
-One worth calling out: bars are centred on the axis end points, so the first
-and last bar each extend half a bar width past the plot edge. Axis labels have
-to clear `bw/2`, not a token few pixels. Getting this wrong on the left hid the
-leading digit of the accounts axis; getting it wrong on the right hid the
-leading digit of the balance axis.
+Two worth calling out:
+
+**Bars are centred on the axis end points**, so the first and last bar each
+extend half a bar width past the plot edge. Axis labels have to clear `bw/2`,
+not a token few pixels. Getting this wrong on the left hid the leading digit of
+the accounts axis; getting it wrong on the right hid the leading digit of the
+balance axis, which is the same mistake twice.
+
+**The delta badge is centred on the arrow track but sized by its own text.**
+When it was wider than the track it overhung both values and touched them. The
+track now has room for the widest plausible delta: the check exercises
+`$129,170 +1580% $233,150` and still measures 3.2px of clearance, so the panel
+is not merely fitting today's numbers.

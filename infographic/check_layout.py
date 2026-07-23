@@ -9,6 +9,8 @@ the browser rather than by eye, that:
   * no axis label is covered by a bar
   * no axis label runs into the hero block
   * the page is exactly 1056px and the footer fits inside it
+  * the delta badge in the average-account panel clears both values, which
+    matters because its width changes with the number (+14% vs +158%)
 
 Every one of these caught a real bug that a single hand-authored data file
 never triggered, so run it after touching the template or the chart geometry.
@@ -56,6 +58,24 @@ PROBE = """() => {
 }"""
 
 
+PANEL_PROBE = """() => {
+  const bad = [];
+  const q = s => document.querySelector(s);
+  const fv = q('.avg-col.from .v'), tv = q('.avg-col.to .v');
+  const badge = q('.avg-arrow span');
+  if (fv && tv && badge) {
+    const f = fv.getBoundingClientRect(), t = tv.getBoundingClientRect();
+    const b = badge.getBoundingClientRect();
+    if (b.left < f.right) bad.push('delta badge overlaps the from value');
+    if (t.left < b.right) bad.push('delta badge overlaps the to value');
+  }
+  document.querySelectorAll('.panel, .panel-title, .cta-title, .avg-flow')
+    .forEach(e => { if (e.scrollWidth > e.clientWidth + 1)
+      bad.push('overflows horizontally: ' + e.className); });
+  return bad;
+}"""
+
+
 def load_frame(csv="data/529_data.csv"):
     root = pathlib.Path(__file__).resolve().parent.parent
     d = pd.read_csv(root / csv).rename(columns={
@@ -86,6 +106,7 @@ def main() -> int:
                 pg.wait_for_timeout(220)
 
                 bad = pg.evaluate(PROBE)
+                bad += pg.evaluate(PANEL_PROBE)
                 height = pg.evaluate("document.querySelector('.page').scrollHeight")
                 clear = pg.evaluate(
                     "() => {const p=document.querySelector('.page')"
