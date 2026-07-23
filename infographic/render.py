@@ -40,23 +40,32 @@ def x_for(i, n):
 
 
 # ─────────────────────────── charts (unchanged) ───────────────────────────
+
+def nice_ceiling(v, step):
+    """Round up to a clean multiple of step, leaving a little headroom."""
+    import math
+    return max(step, math.ceil(v * 1.06 / step) * step)
+
+
 def area_chart(cfg, as_of_short, label_years):
     pts = cfg["series"]
     n = len(pts)
     y0, y1 = 250.0, 40.0
-    ymax = max(640.0, max(p["value"] for p in pts) * 1.06)
+    # 640 keeps the published look while the series fits under it. Beyond
+    # that the axis grows in clean 200s so a future edition cannot overflow.
+    peak = max(p["value"] for p in pts)
+    ymax = 640.0 if peak <= 604 else float(nice_ceiling(peak, 200))
     ann = {a["year"] for a in cfg["annotations"]}
 
     def y_for(v):
         return y0 - (v / ymax) * (y0 - y1)
 
     co = [(x_for(i, n), y_for(p["value"])) for i, p in enumerate(pts)]
-    line = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}"
-                    for i, (x, y) in enumerate(co))
+    line = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}" for i, (x, y) in enumerate(co))
     area = f"{line} L{co[-1][0]:.1f},{y0} L{co[0][0]:.1f},{y0} Z"
 
     o = []
-    for gv in (200, 400, 600):
+    for gv in range(200, int(ymax) + 1, 200):
         gy = y_for(gv)
         o.append(f'<line x1="{PLOT_X0}" y1="{gy:.1f}" x2="{PLOT_X1}" y2="{gy:.1f}" class="grid"/>'
                  f'<text x="{PLOT_X0 - 6}" y="{gy + 2.6:.1f}" class="gridlab">{gv}</text>')
@@ -70,10 +79,14 @@ def area_chart(cfg, as_of_short, label_years):
             o.append(f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{x:.1f}" y2="{y0}" class="drop"/>'
                      f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.8" class="dropdot"/>')
 
+    # Every point carries its value, matching the published sheet. Annotated
+    # years and the endpoint are emphasised; the rest sit back so the shape
+    # still reads first.
     for i, p in enumerate(pts):
-        if p["year"] in label_years:
-            x, y = co[i]
-            o.append(f'<text x="{x:.1f}" y="{y - 8:.1f}" class="vlab hi">{p["value"]:.0f}</text>')
+        x, y = co[i]
+        strong = p["year"] in label_years
+        o.append(f'<text x="{x:.1f}" y="{y - 8:.1f}" '
+                 f'class="vlab{" hi" if strong else ""}">{p["value"]:.0f}</text>')
         o.append(f'<text x="{x_for(i, n):.1f}" y="266" class="ylab">{p["year"]}</text>')
 
     ex, ey = co[-1]
@@ -86,56 +99,76 @@ def area_chart(cfg, as_of_short, label_years):
 
     return ('<svg viewBox="0 0 560 278" class="chart">'
             '<defs><linearGradient id="leafgrad" x1="0" y1="0" x2="0" y2="1">'
-            '<stop offset="0" stop-color="#3A8916" stop-opacity="0.34"/>'
-            '<stop offset="1" stop-color="#3A8916" stop-opacity="0.02"/>'
-            '</linearGradient></defs>' + "".join(o) + '</svg>')
+            '<stop offset="0%" stop-color="#3A8916"/>'
+            '<stop offset="100%" stop-color="#2B650B"/></linearGradient></defs>'
+            + "".join(o) + "</svg>")
 
 
-def decomposition_chart(cfg, avg_series, as_of_short, avg_label):
-    pts = cfg["series"]
+# --------------------------------------------------- decomposition chart
+
+
+def decomposition_chart(acc_cfg, avg_series, as_of_short, avg_hero):
+    """
+    Accounts as columns against the left axis, average balance as a line against
+    the right axis. Together these are the two factors whose product is total
+    assets, so this explains the chart above instead of repeating it.
+    """
+    pts = acc_cfg["series"]
     n = len(pts)
-    y0, y1 = 250.0, 46.0
-    nmax = max(p["value"] for p in pts) * 1.18
-    amax = max(avg_series) * 1.18
+    y0, y1 = 168.0, 26.0
+    # Both axes hold their published scale while the data fits, then grow.
+    n_peak = max(p["value"] for p in pts)
+    a_peak = max(avg_series)
+    n_max = 20.0 if n_peak <= 19.0 else float(nice_ceiling(n_peak, 5))
+    a_max = 40000.0 if a_peak <= 38000 else float(nice_ceiling(a_peak, 10000))
+    bw = 19.0
 
-    def ny(v):
-        return y0 - (v / nmax) * (y0 - y1)
+    def yn(v):
+        return y0 - (v / n_max) * (y0 - y1)
 
-    def ay(v):
-        return y0 - (v / amax) * (y0 - y1)
+    def ya(v):
+        return y0 - (v / a_max) * (y0 - y1)
 
     o = []
-    bw = (PLOT_X1 - PLOT_X0) / n * 0.56
+    for gv in range(5, int(n_max) + 1, 5):
+        gy = yn(gv)
+        o.append(f'<line x1="{PLOT_X0}" y1="{gy:.1f}" x2="{PLOT_X1}" y2="{gy:.1f}" class="grid"/>'
+                 f'<text x="{PLOT_X0 - 6}" y="{gy + 2.6:.1f}" class="gridlab">{gv}</text>')
+    for gv in range(10000, int(a_max) + 1, 10000):
+        o.append(f'<text x="{PLOT_X1 + 6}" y="{ya(gv) + 2.6:.1f}" class="gridlab r">'
+                 f'{gv // 1000}k</text>')
+
     for i, p in enumerate(pts):
-        x = x_for(i, n)
-        h = y0 - ny(p["value"])
-        o.append(f'<rect x="{x - bw / 2:.1f}" y="{ny(p["value"]):.1f}" '
-                 f'width="{bw:.1f}" height="{h:.1f}" class="col"/>')
-        o.append(f'<text x="{x:.1f}" y="266" class="ylab">{p["year"]}</text>')
+        x, y = x_for(i, n), yn(p["value"])
+        last = i == n - 1
+        o.append(f'<rect x="{x - bw / 2:.1f}" y="{y:.1f}" width="{bw}" '
+                 f'height="{y0 - y:.1f}" class="{"bar last" if last else "bar"}"/>')
+        o.append(f'<text x="{x:.1f}" y="{y - 4:.1f}" '
+                 f'class="barlab{" hi" if last else ""}">{p["value"]:.1f}</text>')
+        o.append(f'<text x="{x:.1f}" y="184" class="ylab">{p["year"]}</text>')
 
-    aco = [(x_for(i, n), ay(v)) for i, v in enumerate(avg_series)]
-    apath = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}"
-                     for i, (x, y) in enumerate(aco))
-    o.append(f'<path d="{apath}" class="avgline"/>')
-    for x, y in aco:
-        o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.1" class="avgdot"/>')
+    o.append(f'<text x="{PLOT_X0 - 6}" y="{y1 - 6:.1f}" class="axlab">accounts, M</text>')
+    o.append(f'<text x="{PLOT_X1 + 6}" y="{y1 - 6:.1f}" class="axlab r">avg balance</text>')
 
-    fx, fy = aco[0]
-    lx, ly = aco[-1]
-    o.append(f'<text x="{fx:.1f}" y="{fy - 8:.1f}" class="vlab avg">'
-             f'${avg_series[0] / 1000:.1f}k</text>')
-    o.append(f'<text x="{lx:.1f}" y="{ly - 8:.1f}" class="vlab avg">'
-             f'${avg_series[-1] / 1000:.1f}k</text>')
+    path = " ".join(f"{'M' if i == 0 else 'L'}{x_for(i, n):.1f},{ya(v):.1f}"
+                    for i, v in enumerate(avg_series))
+    o.append(f'<path d="{path}" class="avgline"/>')
+    for i, v in enumerate(avg_series):
+        o.append(f'<circle cx="{x_for(i, n):.1f}" cy="{ya(v):.1f}" r="1.9" class="avgdot"/>')
 
-    fnx, fny = x_for(0, n), ny(pts[0]["value"])
-    lnx, lny = x_for(n - 1, n), ny(pts[-1]["value"])
-    o.append(f'<text x="{fnx:.1f}" y="{fny - 7:.1f}" class="vlab colv">'
-             f'{pts[0]["value"]:.1f}M</text>')
-    o.append(f'<text x="{lnx:.1f}" y="{lny - 7:.1f}" class="vlab colv">'
-             f'{pts[-1]["value"]:.1f}M</text>')
-
+    ey = yn(pts[-1]["value"])
+    o.append(f'<line x1="{PLOT_X1 + 26}" y1="{ey:.1f}" x2="{HERO_X - 6}" y2="{ey:.1f}" class="leader"/>')
+    o.append(f'<text x="{HERO_X}" y="{ey + 8:.1f}" class="hero">{acc_cfg["hero_label"]}</text>'
+             f'<text x="{HERO_X}" y="{ey + 22:.1f}" class="herocap">open accounts</text>'
+             f'<text x="{HERO_X}" y="{ey + 40:.1f}" class="hero sm">{avg_hero}</text>'
+             f'<text x="{HERO_X}" y="{ey + 53:.1f}" class="herocap">average balance</text>'
+             f'<text x="{HERO_X}" y="{ey + 64:.1f}" class="herocap">{as_of_short}</text>')
     o.append(f'<line x1="{PLOT_X0}" y1="{y0}" x2="{PLOT_X1}" y2="{y0}" class="axis"/>')
-    return ('<svg viewBox="0 0 560 278" class="chart">' + "".join(o) + '</svg>')
+
+    return '<svg viewBox="0 0 560 196" class="chart">' + "".join(o) + "</svg>"
+
+
+# ---------------------------------------------------------------------- QR
 
 
 def qr_svg(url):
@@ -200,6 +233,31 @@ def derive_spec(df, period, first_year=2012, url="https://529network.org"):
             annotations.append({"year": worst_y,
                                 "text": f"{worst_y} market decline"})
 
+    # The caption has to match what is actually drawn. The delivered template
+    # hard-coded "the two periods ... in both cases", which is wrong for any
+    # edition with one dip or none, so it is derived here instead.
+    if not annotations:
+        caption = (f"Assets rose in every {'year' if q == 4 else f'Q{q}'} "
+                   f"on this chart.")
+    else:
+        names = " and ".join(a["text"] for a in annotations)
+        one = len(annotations) == 1
+        recovered = []
+        for a in annotations:
+            i = years.index(a["year"])
+            prior = max(assets_b[:i]) if i else assets_b[0]
+            recovered.append(any(v >= prior for v in assets_b[i + 1:]))
+        if all(recovered) and any(recovered):
+            tail = (" Assets regained the prior peak afterwards."
+                    if one else
+                    " Assets regained the prior peak after each.")
+        else:
+            tail = ""
+        caption = (f"The dotted marker shows the period when assets fell: "
+                   f"{names}.{tail}" if one else
+                   f"Dotted markers show the {len(annotations)} periods when "
+                   f"assets fell: {names}.{tail}")
+
     # Label the ends and any annotated year. Keeping this short is deliberate.
     label_years = {years[0], years[-1]} | {a["year"] for a in annotations}
 
@@ -225,6 +283,7 @@ def derive_spec(df, period, first_year=2012, url="https://529network.org"):
             "hero_label": f"${A/1e9:,.0f}B",
             "annotations": annotations,
             "label_years": sorted(label_years),
+            "caption": caption,
         },
         "accounts": {
             "unit": "Open accounts, millions",

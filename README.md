@@ -167,10 +167,14 @@ two-column layout, so they are not a usable fallback.
   Opening that HTML and printing to PDF gives the same sheet.
 
 ### Brand marks
-`infographic/assets/mark-529.svg` and `nast.svg` are **placeholders**. The
-official traced vectors did not ship with the generator bundle. Replace both
-files, keep the filenames, and make sure the paths use `fill="currentColor"` so
-the rail can set them white. Nothing else changes.
+`infographic/assets/mark-529.svg` is traced from the official logo supplied by
+the Network and verified at 96.6% pixel overlap against the source. The white
+swooshes are holes in the path rather than painted shapes, so the mark reads
+correctly on any background: on the dark rail the rail colour shows through
+them. It uses `currentColor`, so CSS decides whether it is white or green.
+
+`infographic/assets/nast.svg` is still a text stand-in. Replace it with the
+official vector under the same filename, using `fill="currentColor"`.
 
 ### Known figure difference
 The published Q4 2025 sheet reads $602B. This record holds $602.9B for the same
@@ -184,3 +188,17 @@ on different bases, assets divided by accounts is not an average balance. The
 derived value reconciles to the published $34,084 within 0.1%, which shows the
 Network's own average uses the same ratio, but that confirms the method is
 shared, not that it is right. Worth settling before the next release.
+
+
+### Fixes made to the delivered generator
+The bundle shipped with several faults that only appear once it is driven by
+live data. All are fixed:
+
+| Fault | Effect | Fix |
+|---|---|---|
+| `assets/` folder absent | `build.py` crashed on the missing brand marks | Marks traced from the official logo |
+| Account bars drew black | The chart emitted `class="col"`, which the stylesheet never defined | Restored the `bar` / `bar last` classes the CSS styles |
+| Axis scales hard-coded at 640B, 20M and $40k | A future edition would overflow the plot silently. Assets are already $603B | Scales hold the published look while the data fits, then grow in clean steps |
+| Caption hard-coded "the two periods ... in both cases" | Wrong for every edition with one dip or none | Caption is derived from the annotations actually drawn, and recovery is only claimed when the series shows it |
+| Average-account panel styled but never rendered | The figures were computed and dropped | Panel restored to the layout |
+| Only three points carried value labels | Far sparser than the published sheet | Every point on both charts is labelled, with annotated years and the endpoint emphasised |

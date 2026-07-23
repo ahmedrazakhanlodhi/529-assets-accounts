@@ -1043,11 +1043,11 @@ with tabs[4]:
                 st.image(out["png"], caption=f"{stem} preview",
                          width="stretch")
 
-        st.markdown('<div class="note">The brand marks in the rail are '
-                    'placeholders. The official vectors did not ship with the '
-                    'generator, so drop them into infographic/assets as '
-                    'mark-529.svg and nast.svg and nothing else needs to '
-                    'change.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="note">The cap emblem is traced from the '
+                    'official logo and matches it to 96.6% of pixels. The NAST '
+                    'mark is still a text stand-in; drop the official vector '
+                    'into infographic/assets/nast.svg to replace it.</div>',
+                    unsafe_allow_html=True)
 
 
 st.markdown(f'<div style="border-top:1px solid {MIST};margin-top:1.6rem;'

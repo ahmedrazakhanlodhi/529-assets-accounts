@@ -108,6 +108,9 @@
   .hero{ font-family:var(--display); font-weight:700; font-size:27px;
          fill:var(--leaf); letter-spacing:-.025em; }
   .herocap{ font-family:var(--data); font-size:7.6px; fill:var(--steel-dark); }
+  .barlab{ font-family:var(--data); font-size:6.6px; fill:var(--steel-dark);
+           text-anchor:middle; }
+  .barlab.hi{ font-weight:700; fill:var(--ink); }
   .bar{ fill:var(--sage); }
   .bar.last{ fill:var(--leaf); }
   .wave{ fill:none; stroke:#fff; stroke-width:1.4; opacity:.92; }
@@ -194,9 +197,7 @@
           <span class="sec-unit">$ billions</span>
         </div>
         {{ assets_svg }}
-        <p class="caption">Dotted markers show the two periods when assets fell:
-          {% for a in d.assets.annotations %}{{ a.text }}{% if not loop.last %} and {% endif %}{% endfor %}.
-          Assets regained the prior peak within two years in both cases.</p>
+        {% if d.assets.caption %}<p class="caption">{{ d.assets.caption }}</p>{% endif %}
       </section>
 
       <section class="sec">
@@ -209,6 +210,22 @@
       </section>
 
       <div class="row">
+        <div class="panel avg">
+          <div class="panel-title">{{ d.average_account.title }}</div>
+          <div class="avg-flow">
+            <div class="avg-col from">
+              <div class="k">{{ d.average_account.from_year }}</div>
+              <div class="v">{{ d.average_account.from_value }}</div>
+            </div>
+            <div class="avg-arrow"><span>{{ d.average_account.delta }}</span></div>
+            <div class="avg-col to">
+              <div class="k">{{ d.average_account.to_label }}</div>
+              <div class="v">{{ d.average_account.to_value }}</div>
+            </div>
+          </div>
+          <div class="avg-note">{{ d.average_account.note }}</div>
+        </div>
+
         <div class="panel auto">
           <div class="panel-title">{{ d.automatic.title }}</div>
           <div class="auto-v">{{ d.automatic.value }}</div>
