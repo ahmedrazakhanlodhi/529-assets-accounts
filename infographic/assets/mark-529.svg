@@ -1,0 +1,32 @@
+<!--
+  PLACEHOLDER WORDMARK.
+
+  The official traced vectors did not ship with the generator bundle, so this
+  is a clean text wordmark standing in for them. It inherits currentColor, so
+  the rail sets it white exactly as the real mark would be.
+
+  To use the official mark: replace this file with the vector, keep the
+  filename, and make sure its paths use fill="currentColor" rather than a
+  hard-coded colour. Nothing else in the generator changes.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 118 46" role="img"
+     aria-label="The 529 Network">
+  <g fill="currentColor">
+    <!-- graduation cap -->
+    <path d="M22 4 L42 12 L22 20 L2 12 Z"/>
+    <path d="M10 15.2 V23 c0 3.4 5.4 6 12 6 s12-2.6 12-6 v-7.8 l-12 4.8 Z"
+          opacity="0.72"/>
+    <!-- swoosh -->
+    <path d="M0 12.6 c6-3.4 13-5.2 20-5.4 -6.6 1.4 -12.8 3.6 -18.4 6.6 Z"
+          opacity="0.85"/>
+    <path d="M0 16.4 c6-3.4 13-5.2 20-5.4 -6.6 1.4 -12.8 3.6 -18.4 6.6 Z"
+          opacity="0.6"/>
+    <!-- wordmark -->
+    <text x="48" y="14" font-family="Poppins, Helvetica, Arial, sans-serif"
+          font-size="9.5" font-weight="600" letter-spacing="0.4">THE</text>
+    <text x="48" y="27" font-family="Poppins, Helvetica, Arial, sans-serif"
+          font-size="14" font-weight="700" letter-spacing="0.2">529</text>
+    <text x="48" y="39" font-family="Poppins, Helvetica, Arial, sans-serif"
+          font-size="9" font-weight="600" letter-spacing="0.3">NETWORK</text>
+  </g>
+</svg>

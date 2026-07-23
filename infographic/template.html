@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ d.headline }}</title>
+<style>
+  :root{
+    --ink:#16240F;
+    --forest:#2B650B;
+    --deep:#1E4A07;
+    --leaf:#3A8916;
+    --mist:#C6DDBB;
+    --sage:#A5C795;
+    --steel:#708686;
+    --steel-dark:#5C7270;
+    --brass:#EAD285;
+
+    --display:"Poppins","Liberation Sans",sans-serif;
+    --body:"Carlito","Liberation Sans",sans-serif;
+    --data:"DejaVu Sans Condensed","Liberation Sans",sans-serif;
+  }
+
+  @page{ size:8.5in 11in; margin:0; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+
+  html,body{
+    width:816px; height:1056px;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+    font-family:var(--body); color:var(--ink);
+  }
+  .page{ display:flex; width:816px; height:1056px; background:#fff; }
+
+  /* ============ rail ============ */
+  .rail{
+    width:178px; flex:none; position:relative; overflow:hidden;
+    background:linear-gradient(168deg,#3C7C10 0%,var(--forest) 46%,#173D05 100%);
+    color:#fff; padding:28px 20px 24px; display:flex; flex-direction:column;
+  }
+  .rail-mark{ width:118px; color:#fff; }
+  .rail-mark svg{ display:block; width:100%; height:auto; }
+  .rail-org{ font-family:var(--data); font-weight:700; font-size:8px;
+             letter-spacing:.15em; color:var(--mist); margin-top:14px; line-height:1.6; }
+  .rail-note{ font-size:7.5px; line-height:1.45; color:rgba(255,255,255,.55); margin-top:6px; }
+
+  .rail-id{ margin-top:38px; }
+  .rail-year{ font-family:var(--display); font-weight:700; font-size:56px;
+              line-height:.9; color:var(--brass); letter-spacing:-.035em; }
+  .rail-period{ font-family:var(--display); font-weight:600; font-size:14px;
+                line-height:1.18; text-transform:uppercase; margin-top:6px; color:#fff; }
+  .rail-rule{ width:38px; height:3px; background:var(--brass); margin-top:14px; }
+
+  .rail-foot{ margin-top:auto; }
+  .rail-nast{ width:104px; color:var(--mist); }
+  .rail-nast svg{ display:block; width:100%; height:auto; }
+  .rail-url{ font-family:var(--display); font-weight:600; font-size:9.5px;
+             color:#fff; text-decoration:none; display:block; margin-top:12px; }
+
+  /* ============ main ============ */
+  .main{ flex:1; display:flex; flex-direction:column; min-width:0; }
+
+  .head{
+    background:linear-gradient(140deg,var(--forest) 0%,var(--deep) 100%);
+    color:#fff; padding:30px 34px 28px; position:relative; overflow:hidden;
+  }
+  .head-wm{ position:absolute; right:-72px; top:-46px; width:340px;
+            color:#fff; opacity:.07; }
+  .head-wm svg{ display:block; width:100%; height:auto; }
+  .head-txt{ position:relative; }
+
+  .eyebrow{ font-family:var(--data); font-weight:700; font-size:8.5px;
+            letter-spacing:.19em; color:var(--brass); text-transform:uppercase; }
+  h1{ font-family:var(--display); font-weight:700; font-size:28px; line-height:1.14;
+      letter-spacing:-.022em; margin-top:11px; max-width:13.4em; }
+  h1 .hl{ color:var(--brass); }
+  .deck{ font-size:11.5px; line-height:1.55; color:var(--mist); margin-top:12px;
+         max-width:40em; }
+
+  .field{ padding:0 34px 20px; display:flex; flex-direction:column; flex:1; }
+
+  .sec{ margin-top:20px; }
+  .sec-head{ display:flex; align-items:baseline;
+             border-bottom:1.5px solid var(--mist); padding-bottom:5px; }
+  .sec-title{ font-family:var(--display); font-weight:600; font-size:13.5px;
+              letter-spacing:-.01em; }
+  .sec-unit{ font-family:var(--data); font-size:8.5px; letter-spacing:.13em;
+             color:var(--steel-dark); text-transform:uppercase; margin-left:auto; }
+  .caption{ font-size:8.5px; line-height:1.45; color:var(--steel-dark); margin-top:3px; }
+  .chart{ display:block; width:100%; margin-top:7px; }
+
+  .grid{ stroke:var(--mist); stroke-width:.7; }
+  .gridlab{ font-family:var(--data); font-size:7px; fill:var(--steel-dark); text-anchor:end; }
+  .axis{ stroke:var(--steel); stroke-width:.9; }
+  .curve{ fill:none; stroke:var(--deep); stroke-width:1.7; stroke-linejoin:round; }
+  .vlab{ font-family:var(--data); font-size:7.6px; fill:var(--steel-dark); text-anchor:middle; }
+  .vlab.hi{ font-weight:700; font-size:8.4px; fill:var(--ink); }
+  .gridlab.r{ text-anchor:start; fill:var(--forest); }
+  .axlab{ font-family:var(--data); font-size:6.8px; letter-spacing:.09em;
+          fill:var(--steel-dark); text-anchor:end; text-transform:uppercase; }
+  .axlab.r{ text-anchor:start; fill:var(--forest); }
+  .avgline{ fill:none; stroke:var(--forest); stroke-width:1.8; stroke-linejoin:round; }
+  .avgdot{ fill:var(--forest); }
+  .hero.sm{ font-size:17px; fill:var(--forest); }
+  .ylab{ font-family:var(--data); font-size:8px; fill:var(--ink); text-anchor:middle; }
+  .drop{ stroke:#fff; stroke-width:1; stroke-dasharray:2 2.4; opacity:.9; }
+  .dropdot{ fill:#fff; stroke:var(--deep); stroke-width:1.2; }
+  .enddot{ fill:#fff; stroke:var(--deep); stroke-width:2.2; }
+  .leader{ stroke:var(--mist); stroke-width:1; }
+  .hero{ font-family:var(--display); font-weight:700; font-size:27px;
+         fill:var(--leaf); letter-spacing:-.025em; }
+  .herocap{ font-family:var(--data); font-size:7.6px; fill:var(--steel-dark); }
+  .bar{ fill:var(--sage); }
+  .bar.last{ fill:var(--leaf); }
+  .wave{ fill:none; stroke:#fff; stroke-width:1.4; opacity:.92; }
+
+  .row{ display:flex; gap:10px; margin-top:22px; }
+  .panel{ padding:14px 16px 15px; color:#fff; }
+  .panel.avg{ flex:1.25; background:linear-gradient(135deg,#2F6A0C,var(--deep)); }
+  .panel.auto{ flex:1; background:var(--ink); }
+  .panel.cta{ flex:1.1; background:#fff; border:1.5px solid var(--mist);
+              color:var(--ink); display:flex; gap:11px; align-items:flex-start; }
+  .cta-txt{ flex:1; min-width:0; }
+  .cta-title{ font-family:var(--display); font-weight:700; font-size:15px;
+              letter-spacing:-.015em; color:var(--forest); }
+  .cta-body{ font-size:8.8px; line-height:1.45; color:var(--steel-dark); margin-top:5px; }
+  .cta-url{ font-family:var(--data); font-weight:700; font-size:8.6px;
+            letter-spacing:.06em; color:var(--forest); margin-top:7px; display:block;
+            text-decoration:none; }
+  .qr{ width:74px; flex:none; color:var(--ink); }
+  .qr svg{ display:block; width:100%; height:auto; }
+  .panel-title{ font-family:var(--data); font-weight:700; font-size:8px;
+                letter-spacing:.17em; text-transform:uppercase; color:var(--mist); }
+
+  .avg-flow{ display:flex; align-items:flex-end; gap:8px; margin-top:11px; }
+  .avg-col .k{ font-family:var(--data); font-size:7.6px; color:var(--mist);
+               letter-spacing:.08em; }
+  .avg-col .v{ font-family:var(--display); font-weight:700; font-size:22px;
+               letter-spacing:-.03em; line-height:1.1; }
+  .avg-col.from .v{ color:var(--mist); }
+  .avg-col.to .v{ color:var(--brass); }
+  .avg-arrow{ flex:1; height:1px; background:rgba(255,255,255,.32); position:relative;
+              margin-bottom:9px; }
+  .avg-arrow span{ position:absolute; left:50%; top:-8px; transform:translateX(-50%);
+                   background:#2C650C; padding:0 7px; font-family:var(--data);
+                   font-weight:700; font-size:9.5px; color:var(--brass); }
+  .avg-note{ font-size:8px; line-height:1.4; color:var(--mist); margin-top:10px; }
+
+  .auto-v{ font-family:var(--display); font-weight:700; font-size:48px; line-height:1;
+           margin-top:8px; letter-spacing:-.035em; color:var(--brass); }
+  .auto-b{ font-size:9.4px; line-height:1.45; color:var(--mist); margin-top:7px; }
+
+  .foot{ margin-top:auto; padding-top:11px; border-top:1px solid var(--mist);
+         display:flex; gap:16px; align-items:flex-end; }
+  .foot-txt{ font-size:8px; line-height:1.5; color:var(--steel-dark); flex:1; }
+  .foot-url{ font-family:var(--display); font-weight:700; font-size:10px;
+             color:var(--forest); text-decoration:none; white-space:nowrap; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <aside class="rail">
+    <div class="rail-mark">{{ mark_529 }}</div>
+    <div class="rail-org">THE 529 NETWORK</div>
+    <div class="rail-note">A network of the National Association of State Treasurers</div>
+
+    <div class="rail-id">
+      <div class="rail-year">{{ d.year }}</div>
+      <div class="rail-period">{{ d.period_label }}</div>
+      <div class="rail-rule"></div>
+    </div>
+
+    <div class="rail-foot">
+      <div class="rail-nast">{{ mark_nast }}</div>
+      <a class="rail-url" href="{{ d.footer.url_href }}">{{ d.footer.url }}</a>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <header class="head">
+      <div class="head-wm">{{ mark_529 }}</div>
+      <div class="head-txt">
+        <div class="eyebrow">National figures &nbsp;&middot;&nbsp; as of {{ d.as_of }}</div>
+        <h1>{{ headline_html | safe }}</h1>
+        <p class="deck">{{ d.deck }}</p>
+      </div>
+    </header>
+
+    <div class="field">
+
+      <section class="sec">
+        <div class="sec-head">
+          <span class="sec-title">Total assets</span>
+          <span class="sec-unit">$ billions</span>
+        </div>
+        {{ assets_svg }}
+        <p class="caption">Dotted markers show the two periods when assets fell:
+          {% for a in d.assets.annotations %}{{ a.text }}{% if not loop.last %} and {% endif %}{% endfor %}.
+          Assets regained the prior peak within two years in both cases.</p>
+      </section>
+
+      <section class="sec">
+        <div class="sec-head">
+          <span class="sec-title">What drives the total</span>
+          <span class="sec-unit">accounts &times; average balance</span>
+        </div>
+        {{ decomp_svg }}
+        <p class="caption">{{ d.accounts.growth_note }}</p>
+      </section>
+
+      <div class="row">
+        <div class="panel auto">
+          <div class="panel-title">{{ d.automatic.title }}</div>
+          <div class="auto-v">{{ d.automatic.value }}</div>
+          <div class="auto-b">{{ d.automatic.body }}</div>
+        </div>
+
+        <div class="panel cta">
+          <div class="cta-txt">
+            <div class="cta-title">{{ d.cta.title }}</div>
+            <div class="cta-body">{{ d.cta.body }}</div>
+            <a class="cta-url" href="{{ d.cta.url }}">{{ d.cta.url_label }}</a>
+          </div>
+          <div class="qr">{{ qr }}</div>
+        </div>
+      </div>
+
+      <footer class="foot">
+        <div class="foot-txt">
+          {{ d.footer.source }}
+          {% if d.footer.reporting %}{{ d.footer.reporting }}{% endif %}
+          {{ d.footer.scope }}
+        </div>
+        <a class="foot-url" href="{{ d.footer.url_href }}">{{ d.footer.url }}</a>
+      </footer>
+
+    </div>
+  </main>
+
+</div>
+</body>
+</html>

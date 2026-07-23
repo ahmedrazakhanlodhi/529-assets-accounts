@@ -17,6 +17,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from infographic import render as ig_render
+
 # ────────────────────────── brand ──────────────────────────
 GREEN, DARK, STEEL, MIST = "#3A8916", "#2B650B", "#708686", "#C6DDBB"
 INK, PAPER, AMBER, RED = "#1C2420", "#FAFBF8", "#C98A2B", "#A34A2A"
@@ -341,7 +343,7 @@ def tell_the_story() -> str:
 st.markdown(f'<div class="callout">{tell_the_story()}</div>',
             unsafe_allow_html=True)
 
-tabs = st.tabs(["National", "States", "Plans", "Data"])
+tabs = st.tabs(["National", "States", "Plans", "Data", "Infographic"])
 
 
 # ────────────────────────── National ──────────────────────────
@@ -916,6 +918,137 @@ convenience, not a field of record.
                      column_config={"quarter": "Period", "state": "State",
                                     "plan": "Plan", "note": "Note"})
 '''
+
+# ────────────────────────── Infographic ──────────────────────────
+with tabs[4]:
+    st.markdown('<div class="note">Generates the print-ready period '
+                'infographic straight from this record, so the published sheet '
+                'and the dashboard can never disagree.</div>',
+                unsafe_allow_html=True)
+
+    # The infographic is a national publication covering savings and prepaid
+    # together, so it always reads the unfiltered record regardless of the
+    # sidebar plan type. Anything else would publish a partial total.
+    ig_src = full[full["reporting"]].copy()
+
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        ed = st.selectbox("Edition", LABELS[::-1], index=0,
+                          help="Which reporting period the sheet is for.")
+        ed_p = pd.Period(ed, freq="Q")
+        earliest = int(min(p.year for p in QS))
+        if ed_p.year <= earliest:
+            st.markdown('<div class="note">This edition is the earliest on '
+                        'record, so there is no prior year to chart against. '
+                        'Pick a later edition.</div>', unsafe_allow_html=True)
+            first_year = earliest
+        else:
+            first_year = st.number_input(
+                "Chart starts in", min_value=earliest,
+                max_value=ed_p.year - 1,
+                value=min(2012, ed_p.year - 1), step=1,
+                help="The published series starts in 2012, the first year "
+                     "with a complete account count.")
+    if type_sel != "Total":
+        with c2:
+            st.markdown(f'<div class="callout">The sidebar is filtered to '
+                        f'{type_sel}, but the infographic always uses the '
+                        f'total of savings and prepaid, matching its own '
+                        f'footnote.</div>', unsafe_allow_html=True)
+
+    try:
+        spec = ig_render.derive_spec(ig_src, ed_p, first_year=int(first_year))
+    except Exception as exc:
+        st.error(f"Could not build the sheet for {ed}: {exc}")
+        spec = None
+
+    if spec:
+        a_now = ig_src[ig_src["period"] == ed_p]["assets"].sum()
+        c_now = ig_src[ig_src["period"] == ed_p]["accounts"].sum()
+        st.markdown(f"""
+        <div class="ledger">
+          <div class="cell"><div class="v">{usd(a_now)}</div><div class="k">Total assets</div></div>
+          <div class="cell"><div class="v">{num(c_now)}</div><div class="k">Open accounts</div></div>
+          <div class="cell"><div class="v">{spec['average_account']['to_value']}</div>
+            <div class="k">Average balance (derived)</div></div>
+          <div class="cell"><div class="v">{spec['footer']['reporting'].split()[0]}</div>
+            <div class="k">Plans reporting</div></div>
+        </div>""", unsafe_allow_html=True)
+
+        st.markdown("##### Wording")
+        headline = st.text_input("Headline", spec["headline"])
+        hl = st.text_input(
+            "Phrase set in gold", spec["headline_highlight"],
+            help="Must appear in the headline word for word, or it is ignored.")
+        deck = st.text_area("Deck", spec["deck"], height=90)
+        spec["headline"], spec["headline_highlight"], spec["deck"] = headline, hl, deck
+        if hl and hl not in headline:
+            st.markdown('<div class="note">That phrase is not in the headline, '
+                        'so nothing will be highlighted.</div>',
+                        unsafe_allow_html=True)
+
+        with st.expander("What goes on the sheet"):
+            st.markdown(
+                f"**Series** {spec['assets']['series'][0]['year']} to "
+                f"{spec['assets']['series'][-1]['year']}, "
+                f"{len(spec['assets']['series'])} points, taken from "
+                f"Q{ed_p.quarter} of each year so the comparison stays like "
+                f"for like.\n\n"
+                f"**Average balance** is derived, assets divided by accounts, "
+                f"and is labelled that way on the sheet. It is never entered "
+                f"by hand.\n\n"
+                f"**Marked on the chart**: "
+                + (", ".join(a["text"] for a in spec["assets"]["annotations"])
+                   or "no single-year fall large enough to mark") + ".")
+            st.json({k: v for k, v in spec.items() if not k.startswith("_")},
+                    expanded=False)
+
+        if st.button("Generate the sheet", type="primary"):
+            with st.spinner("Rendering..."):
+                try:
+                    ok, note = ig_render.ensure_chromium()
+                    out = ig_render.render(spec)
+                except Exception as exc:
+                    ok, note, out = False, str(exc)[:300], None
+
+            if out and out["pdf"]:
+                st.session_state["ig_out"] = out
+                st.session_state["ig_stem"] = spec["file_stem"]
+            elif out:
+                st.session_state["ig_out"] = out
+                st.session_state["ig_stem"] = spec["file_stem"]
+                st.warning(
+                    "The PDF needs a headless browser, which is not available "
+                    "here, so only the HTML was produced. Open the HTML and "
+                    "print to PDF, or see the deployment note in the README to "
+                    "enable rendering on the server. "
+                    f"({note})")
+
+        out = st.session_state.get("ig_out")
+        if out:
+            stem = st.session_state.get("ig_stem", "529-Graphic")
+            d1, d2, d3 = st.columns(3)
+            with d1:
+                st.download_button(
+                    "Download PDF", out["pdf"] or b"", f"{stem}.pdf",
+                    "application/pdf", disabled=out["pdf"] is None)
+            with d2:
+                st.download_button(
+                    "Download PNG", out["png"] or b"", f"{stem}.png",
+                    "image/png", disabled=out["png"] is None)
+            with d3:
+                st.download_button("Download HTML", out["html"],
+                                   f"{stem}.html", "text/html")
+            if out["png"]:
+                st.image(out["png"], caption=f"{stem} preview",
+                         width="stretch")
+
+        st.markdown('<div class="note">The brand marks in the rail are '
+                    'placeholders. The official vectors did not ship with the '
+                    'generator, so drop them into infographic/assets as '
+                    'mark-529.svg and nast.svg and nothing else needs to '
+                    'change.</div>', unsafe_allow_html=True)
+
 
 st.markdown(f'<div style="border-top:1px solid {MIST};margin-top:1.6rem;'
             f'padding-top:.6rem" class="note">The 529 Network · Data submitted by '

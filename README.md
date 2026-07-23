@@ -131,3 +131,56 @@ it needs to change.
 
 Also removed from the live view for now: the share-of-national-assets figure on
 the States tab, and the ten-largest-plans concentration caption on National.
+
+## Infographic tab
+Generates the print-ready period sheet as a PDF, PNG and HTML, with every
+figure derived from `data/529_data.csv`. The published sheet and the dashboard
+therefore cannot disagree.
+
+**What is derived, not typed.** Assets, accounts, the annual series, the
+headline, the deck, the plans-reporting count, and average balance. Average
+balance is always assets divided by accounts and is labelled as derived on the
+face of the sheet. Headline and deck wording can be edited before generating;
+the numbers cannot.
+
+**Like-for-like series.** A Q4 edition charts Q4 of each year, a Q1 edition
+charts Q1 of each year. Quarter ends are never mixed. Because quarterly
+reporting only starts in 2021, a Q1 edition has fewer points than a Q4 one.
+That is the record, not a bug.
+
+**Annotations** are computed. The generator marks the worst single-year fall in
+the series if it exceeds 2%, so a future edition cannot inherit a hard-coded
+year that no longer applies.
+
+**Always the total.** The sheet covers savings and prepaid together regardless
+of the sidebar plan type filter, matching its own footnote. The tab says so
+when the sidebar is filtered.
+
+### Chromium is required for PDF output
+The layout depends on flexbox, so the PDF is rendered by headless Chromium via
+Playwright. WeasyPrint and other pure-Python engines were tried and collapse the
+two-column layout, so they are not a usable fallback.
+
+- `packages.txt` carries the system libraries Chromium needs.
+- The tab calls `playwright install chromium` on first use and caches it.
+- If a browser cannot be started, the tab still produces the HTML and says so.
+  Opening that HTML and printing to PDF gives the same sheet.
+
+### Brand marks
+`infographic/assets/mark-529.svg` and `nast.svg` are **placeholders**. The
+official traced vectors did not ship with the generator bundle. Replace both
+files, keep the filenames, and make sure the paths use `fill="currentColor"` so
+the rail can set them white. Nothing else changes.
+
+### Known figure difference
+The published Q4 2025 sheet reads $602B. This record holds $602.9B for the same
+quarter, which rounds to $603B. The gap is in the source figures, not the
+generator. Confirm which is authoritative before publishing.
+
+### Open item carried over from the generator
+The delivered README flags that total assets include prepaid plans while the
+published account count was labelled "529 savings accounts". If those two are
+on different bases, assets divided by accounts is not an average balance. The
+derived value reconciles to the published $34,084 within 0.1%, which shows the
+Network's own average uses the same ratio, but that confirms the method is
+shared, not that it is right. Worth settling before the next release.

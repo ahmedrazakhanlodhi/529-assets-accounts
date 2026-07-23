@@ -1,0 +1,17 @@
+<!--
+  PLACEHOLDER WORDMARK. Same note as mark-529.svg: replace with the official
+  vector under this filename, using fill="currentColor".
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 118 26" role="img"
+     aria-label="National Association of State Treasurers">
+  <g fill="currentColor">
+    <path d="M0 5.6 c5-2.8 10.8-4.4 16.6-4.6 -5.4 1.2 -10.6 3 -15.2 5.6 Z"
+          opacity="0.85"/>
+    <path d="M0 8.8 c5-2.8 10.8-4.4 16.6-4.6 -5.4 1.2 -10.6 3 -15.2 5.6 Z"
+          opacity="0.6"/>
+    <text x="21" y="8" font-family="Poppins, Helvetica, Arial, sans-serif"
+          font-size="5.4" font-weight="600" letter-spacing="0.35">NATIONAL ASSOCIATION OF</text>
+    <text x="21" y="17" font-family="Poppins, Helvetica, Arial, sans-serif"
+          font-size="6.6" font-weight="700" letter-spacing="0.3">STATE TREASURERS</text>
+  </g>
+</svg>
