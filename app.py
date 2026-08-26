@@ -172,7 +172,7 @@ def load():
         "AUM": "assets", "Note": "note"})
     d["quarter"] = d["Year"].astype(str) + d["Period"]
     d["period"] = pd.PeriodIndex(d["quarter"], freq="Q")
-    d["t"] = d["period"].dt.to_timestamp(how="end")
+    d["t"] = d["period"].dt.to_timestamp(how="start")
     d["state"] = d["state"].str.strip()
     d["plan"] = d["plan"].str.strip()
     # The source spells 15 plans two ways, changing punctuation or casing
@@ -255,9 +255,17 @@ def year_ticks(f, times, every=5):
         yrs.append(y1)                      # always show the newest year
     # drop a labelled year if it would collide with the final one
     yrs = [y for y in yrs if y == y1 or y1 - y >= 2]
-    vals = [pd.Timestamp(year=y, month=12, day=31) for y in yrs]
+    # Anchor each tick on Jan 1, matching the start-of-quarter timestamps the
+    # charts use. A range end of Q2 still shows its year because the axis is
+    # extended just past the last point below.
+    vals = [pd.Timestamp(year=y, month=1, day=1) for y in yrs]
     f.update_xaxes(tickmode="array", tickvals=vals,
                    ticktext=[str(y) for y in yrs])
+    # Give the axis a little room past the final point so a mid-year end (like
+    # Q2) still sits inside the plotted range and its year tick stays visible.
+    last = t.max()
+    f.update_xaxes(range=[t.min() - pd.Timedelta(days=120),
+                          last + pd.Timedelta(days=120)])
     return f
 
 
@@ -416,7 +424,7 @@ with tabs[0]:
             columns={"period": "prior", "assets": "a0"}), on="prior", how="left")
         g["yoy"] = g["assets"] / g["a0"] - 1
         g = g.dropna(subset=["yoy"])
-        g["t"] = g["period"].dt.to_timestamp(how="end")
+        g["t"] = g["period"].dt.to_timestamp(how="start")
         f = go.Figure(go.Bar(x=g["t"], y=g["yoy"],
                              marker_color=[GREEN if v >= 0 else RED for v in g["yoy"]],
                              hovertemplate="%{x|%Y Q%q}<br>%{y:+.1%}<extra></extra>"))
