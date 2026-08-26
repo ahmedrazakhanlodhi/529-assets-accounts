@@ -426,7 +426,13 @@ def render(spec) -> dict:
             pg.pdf(path=str(pdf_path), width="8.5in", height="11in",
                    print_background=True,
                    margin={"top": "0", "right": "0", "bottom": "0", "left": "0"})
-            pg.screenshot(path=str(png_path), full_page=True)
+            # Clip to exactly one 8.5x11 page at the render scale, rather than
+            # a full-page capture. full_page extends by any sub-pixel overflow
+            # from the charts, which makes some viewers show a second band.
+            scale = 3
+            pg.screenshot(path=str(png_path),
+                          clip={"x": 0, "y": 0,
+                                "width": 816, "height": 1056})
             br.close()
         out["pdf"] = pdf_path.read_bytes()
         out["png"] = png_path.read_bytes()

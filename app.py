@@ -225,6 +225,39 @@ def fig(f, h=340):
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
     f.update_xaxes(gridcolor="#EDF3E8", zeroline=False)
     f.update_yaxes(gridcolor="#EDF3E8", zeroline=False)
+    # Any chart whose x-axis is time gets an explicit tick on the newest year,
+    # so a series running into 2026 never reads as though it stopped at 2025.
+    xs = []
+    for tr in f.data:
+        if getattr(tr, "x", None) is not None:
+            xs.extend(list(tr.x))
+    if xs:
+        xt = pd.to_datetime(pd.Series(xs), errors="coerce")
+        if xt.notna().mean() > 0.9 and xt.dt.year.nunique() > 1:
+            year_ticks(f, xt.dropna())
+    return f
+
+
+def year_ticks(f, times, every=5):
+    """Label the x-axis every `every` years and always include the latest year.
+
+    Plotly's automatic ticks stop at the last round multiple, so a chart that
+    runs into 2026 still reads "2025" at the right edge. This anchors an
+    explicit tick on the final year so the newest data is unmistakable.
+    """
+    t = pd.to_datetime(pd.Series(times))
+    if t.empty:
+        return f
+    y0, y1 = int(t.dt.year.min()), int(t.dt.year.max())
+    first_tick = y0 - (y0 % every)
+    yrs = [y for y in range(first_tick, y1 + 1, every) if y >= y0]
+    if y1 not in yrs:
+        yrs.append(y1)                      # always show the newest year
+    # drop a labelled year if it would collide with the final one
+    yrs = [y for y in yrs if y == y1 or y1 - y >= 2]
+    vals = [pd.Timestamp(year=y, month=12, day=31) for y in yrs]
+    f.update_xaxes(tickmode="array", tickvals=vals,
+                   ticktext=[str(y) for y in yrs])
     return f
 
 
