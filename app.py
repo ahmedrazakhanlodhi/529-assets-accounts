@@ -1084,10 +1084,10 @@ with tabs[4]:
                 st.image(out["png"], caption=f"{stem} preview",
                          width="stretch")
 
-        st.markdown('<div class="note">The cap emblem is traced from the '
-                    'official logo and matches it to 96.6% of pixels. The NAST '
-                    'mark is still a text stand-in; drop the official vector '
-                    'into infographic/assets/nast.svg to replace it.</div>',
+        st.markdown('<div class="note">Both brand marks are traced from the '
+                    'official logos: the 529 Network cap at 96.6% pixel overlap '
+                    'and the NAST mark at 94.4%. Each inherits currentColor so '
+                    'the rail renders them correctly.</div>',
                     unsafe_allow_html=True)
 
 
