@@ -319,8 +319,8 @@ def derive_spec(df, period, first_year=2012, url="https://529network.org"):
             "source": ("Source: The 529 Network quarterly data collection from "
                        "state 529 program administrators."),
             "scope": ("Total assets cover 529 savings and prepaid tuition "
-                      "plans. ABLE accounts are excluded. Average balance is "
-                      "derived, assets divided by accounts."),
+                      "plans. Average balance is derived, assets divided by "
+                      "accounts."),
             "reporting": f"{cur['plan'].nunique()} plans reporting",
             "url": "529network.org",
             "url_href": url,
@@ -422,13 +422,30 @@ def render(spec) -> dict:
             pg = br.new_page(viewport={"width": 816, "height": 1056},
                              device_scale_factor=3)
             pg.goto(page_path.as_uri())
+            # Wait for web fonts to settle before measuring or printing. If a
+            # font is missing on the host, Chromium substitutes a wider one and
+            # the content can grow past 11in, which is what pushed the footer
+            # onto a second page on other machines. Pinning .page to a fixed
+            # 816x1056 box (below) stops that growth from paginating.
+            try:
+                pg.evaluate("() => document.fonts.ready")
+            except Exception:
+                pass
             pg.wait_for_timeout(400)
+            # Hard-clamp the sheet to one page. Any overflow is hidden rather
+            # than flowed onto a second page, so the PDF is always one page
+            # regardless of which fonts the host has installed.
+            pg.add_style_tag(content=(
+                "html,body{height:1056px!important;overflow:hidden!important;}"
+                ".page{height:1056px!important;max-height:1056px!important;"
+                "overflow:hidden!important;}"))
+            pg.wait_for_timeout(80)
             pg.pdf(path=str(pdf_path), width="8.5in", height="11in",
-                   print_background=True,
+                   print_background=True, page_ranges="1",
+                   prefer_css_page_size=False,
                    margin={"top": "0", "right": "0", "bottom": "0", "left": "0"})
-            # Clip to exactly one 8.5x11 page at the render scale, rather than
-            # a full-page capture. full_page extends by any sub-pixel overflow
-            # from the charts, which makes some viewers show a second band.
+            # Clip the PNG to exactly one 8.5x11 page (full_page would extend by
+            # any sub-pixel chart overflow and show a second band in viewers).
             scale = 3
             pg.screenshot(path=str(png_path),
                           clip={"x": 0, "y": 0,
