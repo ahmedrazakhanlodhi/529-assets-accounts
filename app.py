@@ -72,6 +72,17 @@ section[data-testid="stSidebar"] {{ background:#F1F6EC; border-right:1px solid {
 .stTabs [aria-selected="true"] {{ color:{DARK} !important; }}
 .stTabs [data-baseweb="tab-highlight"] {{ background-color:{GREEN}; }}
 #MainMenu, footer {{ visibility:hidden; }}
+/* Hide the Streamlit Community Cloud "Created by / Hosted by" viewer badge in
+   the corner. It links to the developer profile and other apps, which the
+   Network does not want surfaced on a member-facing embed. These selectors
+   cover the several class names Streamlit has used for it. */
+[data-testid="stAppViewerBadge"],
+[data-testid="viewerBadge"],
+.viewerBadge_container__1QSob,
+.viewerBadge_link__qRIco,
+.styles_viewerBadge__CvC9N,
+a[href*="streamlit.io/cloud"],
+a[href*="share.streamlit.io"] {{ display:none !important; }}
 </style>
 """, unsafe_allow_html=True)
 
