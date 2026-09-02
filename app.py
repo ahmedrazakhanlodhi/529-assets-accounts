@@ -186,6 +186,31 @@ def load():
     d["t"] = d["period"].dt.to_timestamp(how="start")
     d["state"] = d["state"].str.strip()
     d["plan"] = d["plan"].str.strip()
+
+    # Explicit plan-name corrections, applied before the punctuation-blind merge
+    # below. Some plans were reported under names that differ by a whole word,
+    # so the automatic key cannot join them, and some early aggregate rows were
+    # labelled with just the state name. Each entry maps an old exact name to
+    # the plan's current name so its history reads as one continuous series.
+    # Washington was reported by its administrator (WA529) as the trigger for
+    # these; the same pattern is corrected wherever it is unambiguous.
+    NAME_FIXES = {
+        # Washington GET (prepaid) carried three names over the years, and the
+        # 2003-2004 rows were labelled only "Washington". All are the one GET
+        # plan that has existed since 2001. DreamAhead (savings) began in 2018.
+        ("Washington", "Washington"):
+            "Washington Guaranteed Education Tuition (GET)",
+        ("Washington", "Washington Prepaid"):
+            "Washington Guaranteed Education Tuition (GET)",
+        ("Washington", "Washington Guaranteed Education Tuition"):
+            "Washington Guaranteed Education Tuition (GET)",
+        ("Washington", "Guaranteed Education Tuition (GET)"):
+            "Washington Guaranteed Education Tuition (GET)",
+        ("Washington", "DreamAhead (Washington College Investment Program)"):
+            "Washington DreamAhead College Investment Plan",
+    }
+    key = list(zip(d["state"], d["plan"]))
+    d["plan"] = [NAME_FIXES.get(k, p) for k, p in zip(key, d["plan"])]
     # The source spells 15 plans two ways, changing punctuation or casing
     # partway through (Virginia CollegeAmerica became Virginia - CollegeAmerica
     # and back). Left alone, one plan reads as two and its history breaks in
