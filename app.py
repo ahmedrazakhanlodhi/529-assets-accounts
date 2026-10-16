@@ -208,6 +208,12 @@ def load():
             "Washington Guaranteed Education Tuition (GET)",
         ("Washington", "DreamAhead (Washington College Investment Program)"):
             "Washington DreamAhead College Investment Plan",
+        # Illinois Bright Start was reported as "Bright Start" in 2017-2018
+        # before settling on the current name; join those so its recent history
+        # is continuous. The earlier Direct and Advisor lines (through 2016) are
+        # left as they are, since they were two separate reporting lines in the
+        # same periods and merging them would combine two series into one.
+        ("Illinois", "Bright Start"): "Illinois Bright Start",
     }
     key = list(zip(d["state"], d["plan"]))
     d["plan"] = [NAME_FIXES.get(k, p) for k, p in zip(key, d["plan"])]
@@ -408,12 +414,8 @@ def tell_the_story() -> str:
             parts.append("Balances fell while families kept opening accounts, "
                          "which usually means markets dropped, not that savers "
                          "left.")
-    big = cur.groupby("state")["assets"].sum()
-    top_state = big.idxmax()
-    scope_word = "national total" if type_sel == "Total" else f"{type_sel.lower()} total"
-    parts.append(f"{top_state} holds the most, {usd(big.max())}, about "
-                 f"{pct(ratio(big.max(), A), signed=False)} of the "
-                 f"{scope_word}.")
+    # The "largest state holds X%" line was dropped at the Illinois Treasurer's
+    # request: the leader rarely changes, so a standing note added little.
     return " ".join(parts)
 
 
@@ -460,16 +462,22 @@ with tabs[0]:
             columns={"period": "prior", "assets": "a0"}), on="prior", how="left")
         g["yoy"] = g["assets"] / g["a0"] - 1
         g = g.dropna(subset=["yoy"])
+        # Start at 2010. Before then the record is sparse, so most quarters have
+        # no same-quarter-prior-year to compare against and the bars are gappy;
+        # the early swings also run past +30%, which forces the axis wide and
+        # flattens the recent quarters. From 2010 the data is quarterly and the
+        # range sits within roughly +/-25%, which is what matters to read.
+        g = g[g["period"] >= pd.Period("2010Q1", freq="Q")]
         g["t"] = g["period"].dt.to_timestamp(how="start")
         f = go.Figure(go.Bar(x=g["t"], y=g["yoy"],
                              marker_color=[GREEN if v >= 0 else RED for v in g["yoy"]],
                              hovertemplate="%{x|%Y Q%q}<br>%{y:+.1%}<extra></extra>"))
         f.update_yaxes(tickformat="+.0%")
         st.plotly_chart(fig(f, 300), **PLOT)
-        st.markdown('<div class="note">Green bars mean savings grew compared with '
-                    'the same quarter a year earlier. Red bars mean they shrank. '
-                    'Bars appear only where the record holds that earlier '
-                    'quarter.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="note">Change in total assets from the same '
+                    'quarter a year earlier. Green is growth, red a decline. '
+                    'Shown from 2010, when reporting became quarterly.</div>',
+                    unsafe_allow_html=True)
     with c4:
         st.markdown("#### Average account balance")
         f = go.Figure(go.Scatter(x=n["t"], y=n["avg"], line=dict(color=DARK, width=2),
@@ -639,10 +647,14 @@ with tabs[2]:
         f"Include the {len(retired)} plans that no longer report",
         help="Plans that closed, merged, or were renamed. Their history stops "
              "on their last reporting period.")
-    # Every reporting period in the record contains both savings and prepaid
-    # plans, checked across all 70, so the type filter cannot empty this list.
-    # If a future quarter ever breaks that, this is the line that will show it.
-    universe = sorted(current) + (retired if show_retired else [])
+    # Order plans by their state, then by plan name, so every plan sits in its
+    # state's block in the list rather than by the first letter of a name that
+    # might start with "College", "The", or a ticker. Requested by the Illinois
+    # Treasurer's office. The displayed names are left exactly as reported.
+    plan_state = plan_era.groupby("plan")["state"].last()
+    by_state = lambda names: sorted(
+        names, key=lambda p: (plan_state.get(p, ""), p))
+    universe = by_state(current) + (by_state(retired) if show_retired else [])
     biggest = latest.groupby("plan")["assets"].sum().idxmax()
     plan = st.selectbox("Plan", universe, index=universe.index(biggest))
 
@@ -896,7 +908,14 @@ with tabs[3]:
     with c2:
         f_q = st.multiselect("Periods", LABELS)
     with c3:
-        f_p = st.multiselect("Plans", sorted(df["plan"].unique()))
+        # Only offer real plan names here, not the pre-2009 aggregate rows that
+        # carry the state name, so a state cannot appear as a plan. Order by
+        # state so plans group under their state rather than by first letter.
+        _pe = df[df["plan_level"]]
+        _ps = _pe.groupby("plan")["state"].last()
+        f_p = st.multiselect(
+            "Plans",
+            sorted(_pe["plan"].unique(), key=lambda p: (_ps.get(p, ""), p)))
     v = df.copy()
     if f_s: v = v[v["state"].isin(f_s)]
     if f_q: v = v[v["quarter"].isin(f_q)]
