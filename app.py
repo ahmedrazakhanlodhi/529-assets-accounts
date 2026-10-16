@@ -208,11 +208,13 @@ def load():
             "Washington Guaranteed Education Tuition (GET)",
         ("Washington", "DreamAhead (Washington College Investment Program)"):
             "Washington DreamAhead College Investment Plan",
-        # Illinois Bright Start was reported as "Bright Start" in 2017-2018
-        # before settling on the current name; join those so its recent history
-        # is continuous. The earlier Direct and Advisor lines (through 2016) are
-        # left as they are, since they were two separate reporting lines in the
-        # same periods and merging them would combine two series into one.
+        # Illinois Bright Start, per the Illinois Treasurer's office: the Direct
+        # line is the continuous Bright Start plan, reported as "Bright Start
+        # Direct" through 2016, then "Bright Start" in 2017-2018, then the
+        # current name. Join all three so its history runs unbroken from 2009.
+        # The separate Advisor line was merged into Bright Directions in 2017
+        # and is left as a plan that no longer reports.
+        ("Illinois", "Illinois - Bright Start Direct"): "Illinois Bright Start",
         ("Illinois", "Bright Start"): "Illinois Bright Start",
     }
     key = list(zip(d["state"], d["plan"]))
