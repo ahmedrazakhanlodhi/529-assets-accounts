@@ -21,7 +21,12 @@ from infographic import render as ig_render
 
 # ────────────────────────── brand ──────────────────────────
 GREEN, DARK, STEEL, MIST = "#3A8916", "#2B650B", "#708686", "#C6DDBB"
-INK, PAPER, AMBER, RED = "#1C2420", "#FAFBF8", "#C98A2B", "#A34A2A"
+# RED is the "decline" color, paired with GREEN for gains. It is a dark burnt
+# brown rather than a true red: against GREEN it has ~1.9:1 luminance contrast
+# (vs ~1.3:1 for a mid red), which red-green colorblind viewers can tell apart,
+# and 8:1 against the paper background. Direction is also shown by the bar's
+# sign, so color is never the only cue. (ADA review requested by testers.)
+INK, PAPER, AMBER, RED = "#1C2420", "#FAFBF8", "#C98A2B", "#7A3B0E"
 
 USPS = {
     "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR",
@@ -236,6 +241,22 @@ def load():
     d = d.drop(columns="_k")
 
     d["type"] = np.where(d["plan"].str.contains(PREPAID), "Prepaid", "Savings")
+
+    # Distribution channel: Direct or Advisor. A later data revision will carry
+    # an explicit Channel column; until then, read it where present and fall
+    # back to the plan name, which labels the channel for most plans that have
+    # both. A plan that names neither is treated as Direct, the common case.
+    if "Channel" in d.columns:
+        ch = d["Channel"].astype(str).str.strip().str.title()
+        d["channel"] = np.where(ch.isin(["Direct", "Advisor"]), ch, np.nan)
+    else:
+        d["channel"] = np.nan
+    name_adv = d["plan"].str.contains(r"advisor|advisory", case=False, regex=True)
+    name_dir = d["plan"].str.contains(r"direct", case=False, regex=True)
+    d["channel"] = d["channel"].where(
+        d["channel"].notna(),
+        np.select([name_adv, name_dir], ["Advisor", "Direct"], default="Direct"))
+
     d["note"] = d["note"].fillna("")
     d["reporting"] = d["assets"].notna()
     # Before 2009Q4 the record is one aggregate row per state, labelled with the
@@ -243,6 +264,26 @@ def load():
     # National and state totals hold across the whole record; plan-level views
     # only mean anything after the split.
     d["plan_level"] = d["period"] >= pd.Period("2009Q4", freq="Q")
+
+    # Display name in "State - Name" form, so the plan list sorts by state and
+    # every plan sits in its state's block. The full reported name is kept after
+    # the dash; where the name already begins with the state (or the state is
+    # already present, as in "College Illinois"), it is not duplicated. Requested
+    # by DOT Committee testers. The pre-2009 aggregate rows keep the state name.
+    def _display(state, plan, is_plan_level):
+        if not is_plan_level or plan == state:
+            return plan
+        p = plan
+        # strip a leading "State - " / "State " the source already added
+        for pre in (f"{state} - ", f"{state}- ", f"{state} ", f"{state}-"):
+            if p.startswith(pre):
+                p = p[len(pre):]
+                break
+        return f"{state} - {p}"
+    d["plan"] = [
+        _display(s, p, lvl)
+        for s, p, lvl in zip(d["state"], d["plan"], d["plan_level"])]
+
     return d.sort_values(["period", "state", "plan"]).reset_index(drop=True)
 
 
@@ -252,7 +293,21 @@ PLAN_ERA = pd.Period("2009Q4", freq="Q")
 full = load()
 df = full[full["reporting"]].copy()
 QS = sorted(df["period"].unique())
-LABELS = [f"{p.year}Q{p.quarter}" for p in QS]
+
+
+def qlabel(p) -> str:
+    """Display a quarter as '2026 - Q3' (DOT Committee's requested format)."""
+    p = pd.Period(str(p).replace(" - Q", "Q").replace(" ", ""), freq="Q") \
+        if not isinstance(p, pd.Period) else p
+    return f"{p.year} - Q{p.quarter}"
+
+
+def qparse(label: str):
+    """Parse a '2026 - Q3' label (or a bare '2026Q3') back to a Period."""
+    return pd.Period(str(label).replace(" - Q", "Q").replace(" ", ""), freq="Q")
+
+
+LABELS = [qlabel(p) for p in QS]
 
 PLOT = {"width": "stretch", "config": {"displayModeBar": False}}
 
@@ -322,40 +377,55 @@ with st.sidebar:
 A **529 plan** is a state-sponsored account that helps families save for
 education. This dashboard tracks two numbers for every plan in the country:
 
-**Assets** are the total dollars families hold in a plan. This rises when
-families add money or markets go up, and falls when they withdraw for school
-or markets go down.
+**Volume of Assets** is the total dollars families hold in a plan. This rises
+when families add money or markets go up, and falls when they withdraw for
+school or markets go down.
 
-**Open accounts** count how many accounts exist. This only moves when families
-open or close accounts, so it is the cleaner read on participation.
+**Number of Accounts** counts how many accounts exist. This only moves when
+families open or close accounts, so it is the cleaner read on participation.
 
 **Average balance** is simply assets divided by accounts.
 
 **Savings vs prepaid**: savings plans invest contributions in markets. Prepaid
 plans let families lock in tuition at today's prices.
 
+**Direct vs advisor**: direct plans are opened by families on their own;
+advisor plans are sold through a financial advisor. Some states run both.
+
 Pick any reporting period with the slider below, and choose whether to view
 savings plans, prepaid plans, or the total of both. Every figure and chart on
 the page follows both choices.
 """)
     q_sel = st.select_slider("Reporting period", options=LABELS, value=LABELS[-1])
-    p_sel = pd.Period(q_sel, freq="Q")
+    p_sel = qparse(q_sel)
     type_sel = st.radio(
         "Plan type", ["Total", "Savings", "Prepaid"], index=0,
         help="Total covers every plan. Savings plans invest in markets. "
              "Prepaid plans lock in tuition prices. Every figure and chart "
              "on the page follows this choice.")
+    chan_sel = st.radio(
+        "Distribution channel", ["All", "Direct", "Advisor"], index=0,
+        help="Direct plans are opened by families on their own. Advisor plans "
+             "are sold through a financial advisor. Some states run both. "
+             "Choose All to combine them.")
     st.markdown(
         f'<div class="note">Data submitted by states and consolidated by '
         f'The 529 Network. {len(LABELS)} reporting periods, {LABELS[0]} to '
         f'{LABELS[-1]}. Reporting runs quarterly from 2021 and is sparser before '
         f'that, so the timeline is not evenly spaced.</div>',
         unsafe_allow_html=True)
+    st.markdown(
+        '<div class="note" style="margin-top:.5rem"><strong>Note:</strong> '
+        'These figures are self-reported by the states and have not been '
+        'audited or verified by a third party.</div>',
+        unsafe_allow_html=True)
 
-# The type filter is dashboard wide. Everything below reads the filtered frame,
-# so headline figures, charts, tables, and downloads all agree with the choice.
+# The type and channel filters are dashboard wide. Everything below reads the
+# filtered frame, so headline figures, charts, tables, and downloads all agree.
 if type_sel != "Total":
     df = df[df["type"] == type_sel]
+if chan_sel != "All":
+    df = df[df["channel"] == chan_sel]
 
 cur = df[df["period"] == p_sel]
 i = QS.index(p_sel)
@@ -363,7 +433,7 @@ prev_p = QS[i - 1] if i else None
 yoy_p = (p_sel - 4) if (p_sel - 4) in QS else None
 prev = df[df["period"] == prev_p] if prev_p is not None else df.iloc[:0]
 yoy = df[df["period"] == yoy_p] if yoy_p is not None else df.iloc[:0]
-prior_lbl = f"{prev_p.year}Q{prev_p.quarter}" if prev_p is not None else "n/a"
+prior_lbl = qlabel(prev_p) if prev_p is not None else "n/a"
 
 # ────────────────────────── header ──────────────────────────
 st.markdown('<div class="eyebrow">Member dashboard</div>', unsafe_allow_html=True)
@@ -371,7 +441,7 @@ st.markdown('<div class="pagetitle">Assets & Accounts</div>', unsafe_allow_html=
 scope_txt = {"Total": "every 529 plan on record",
              "Savings": "savings plans only",
              "Prepaid": "prepaid plans only"}[type_sel]
-st.markdown(f'<div class="subtitle">Total assets and open accounts for '
+st.markdown(f'<div class="subtitle">Volume of assets and number of accounts for '
             f'{scope_txt}. Showing {q_sel}.</div>', unsafe_allow_html=True)
 
 # Count real jurisdictions. PRIVATE is the multistate plan, not a state.
@@ -387,9 +457,9 @@ AY = yoy["assets"].sum() if len(yoy) else np.nan
 
 st.markdown(f"""
 <div class="ledger">
-  <div class="cell"><div class="v">{usd(A)}</div><div class="k">Total assets</div>
+  <div class="cell"><div class="v">{usd(A)}</div><div class="k">Volume of Assets</div>
     <div class="d">{dlt(growth(A, A0))} vs {prior_lbl} &nbsp;·&nbsp; {dlt(growth(A, AY))} YoY</div></div>
-  <div class="cell"><div class="v">{num(C)}</div><div class="k">Open accounts</div>
+  <div class="cell"><div class="v">{num(C)}</div><div class="k">Number of Accounts</div>
     <div class="d">{dlt(growth(C, C0))} vs {prior_lbl}</div></div>
   <div class="cell"><div class="v">{usd(ratio(A, C))}</div><div class="k">Average balance</div>
     <div class="d">{dlt(growth(ratio(A, C), ratio(A0, C0)))} vs {prior_lbl}</div></div>
@@ -440,19 +510,19 @@ with tabs[0]:
     st.write("")
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("#### Total assets")
+        st.markdown("#### Volume of Assets")
         f = go.Figure(go.Scatter(x=n["t"], y=n["assets"], fill="tozeroy",
                                  line=dict(color=GREEN, width=2),
                                  fillcolor="rgba(58,137,22,.12)",
-                                 hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra></extra>",
+                                 hovertemplate="%{x|%Y - Q%q}<br>%{customdata}<extra></extra>",
                                  customdata=[usd(v) for v in n["assets"]]))
         money_ticks(f, "yaxis", n["assets"])
         st.plotly_chart(fig(f), **PLOT)
     with c2:
-        st.markdown("#### Open accounts")
+        st.markdown("#### Number of Accounts")
         f = go.Figure(go.Scatter(x=n["t"], y=n["accounts"],
                                  line=dict(color=STEEL, width=2),
-                                 hovertemplate="%{x|%Y Q%q}<br>%{y:,.0f}<extra></extra>"))
+                                 hovertemplate="%{x|%Y - Q%q}<br>%{y:,.0f}<extra></extra>"))
         st.plotly_chart(fig(f), **PLOT)
 
     c3, c4 = st.columns(2)
@@ -473,7 +543,7 @@ with tabs[0]:
         g["t"] = g["period"].dt.to_timestamp(how="start")
         f = go.Figure(go.Bar(x=g["t"], y=g["yoy"],
                              marker_color=[GREEN if v >= 0 else RED for v in g["yoy"]],
-                             hovertemplate="%{x|%Y Q%q}<br>%{y:+.1%}<extra></extra>"))
+                             hovertemplate="%{x|%Y - Q%q}<br>%{y:+.1%}<extra></extra>"))
         f.update_yaxes(tickformat="+.0%")
         st.plotly_chart(fig(f, 300), **PLOT)
         st.markdown('<div class="note">Change in total assets from the same '
@@ -483,7 +553,7 @@ with tabs[0]:
     with c4:
         st.markdown("#### Average account balance")
         f = go.Figure(go.Scatter(x=n["t"], y=n["avg"], line=dict(color=DARK, width=2),
-                                 hovertemplate="%{x|%Y Q%q}<br>%{y:$,.0f}<extra></extra>"))
+                                 hovertemplate="%{x|%Y - Q%q}<br>%{y:$,.0f}<extra></extra>"))
         st.plotly_chart(fig(f, 300), **PLOT)
         st.markdown('<div class="note">What the typical dollar amount per account '
                     'looks like: total assets divided by total accounts.</div>',
@@ -506,11 +576,11 @@ with tabs[0]:
             f.add_scatter(x=tt.index, y=tt["Savings"], name="Savings", stackgroup="a",
                           line=dict(color=GREEN, width=1),
                           customdata=[usd(v) for v in tt["Savings"]],
-                          hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Savings</extra>")
+                          hovertemplate="%{x|%Y - Q%q}<br>%{customdata}<extra>Savings</extra>")
             f.add_scatter(x=tt.index, y=tt["Prepaid"], name="Prepaid", stackgroup="a",
                           line=dict(color=AMBER, width=1),
                           customdata=[usd(v) for v in tt["Prepaid"]],
-                          hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Prepaid</extra>")
+                          hovertemplate="%{x|%Y - Q%q}<br>%{customdata}<extra>Prepaid</extra>")
             money_ticks(f, "yaxis", (tt["Savings"] + tt["Prepaid"]))
             st.plotly_chart(fig(f, 300), **PLOT)
             st.markdown('<div class="note">Savings plans invest in markets. Prepaid '
@@ -536,9 +606,20 @@ with tabs[0]:
 # ────────────────────────── States ──────────────────────────
 with tabs[1]:
     st.markdown('<div class="note">Darker green means more. Hover any state for '
-                'its numbers, or scroll down to look at one state closely.</div>',
+                'its numbers, click a state to open its detail, or scroll down '
+                'to look at one state closely.</div>',
+                unsafe_allow_html=True)
+    st.markdown('<div class="note" style="margin-top:.3rem">A plan is shown '
+                'under the state that administers it. Its assets and accounts '
+                'are not necessarily held entirely by residents of that state, '
+                'since families can open many plans from anywhere.</div>',
                 unsafe_allow_html=True)
     st.write("")
+    # Shared state list and default for both the map click handler and the
+    # detail selectbox below. Uses the full plan-level roster so a state the
+    # current filter empties is still selectable.
+    _states = sorted(full[full["plan_level"]]["state"].unique())
+    st.session_state.setdefault("state_pick", _states[0])
     s = (cur.groupby("state", as_index=False)
          .agg(assets=("assets", "sum"), accounts=("accounts", "sum"),
               plans=("plan", "nunique")))
@@ -569,17 +650,37 @@ with tabs[1]:
     with c2:
         f = go.Figure(go.Choropleth(
             locations=mapped["usps"], z=mapped[k], locationmode="USA-states",
-            colorscale=[[0, "#EFF5EA"], [.5, MIST], [1, DARK]],
+            # Darker gradient (requested by testers): deeper mid and end stops so
+            # higher-value states read clearly rather than washing out pale.
+            colorscale=[[0, "#DCE8D2"], [.35, "#7CA85C"],
+                        [.7, GREEN], [1, "#1E4A07"]],
             marker_line_color="white", colorbar=dict(thickness=10, len=.7),
             customdata=np.stack([mapped["state"], mapped["assets"],
                                  mapped["accounts"], mapped["avg"],
                                  mapped["plans"]], axis=-1),
-            hovertemplate=("<b>%{customdata[0]}</b><br>Assets %{customdata[1]:$,.0f}"
-                           "<br>Accounts %{customdata[2]:,.0f}"
+            hovertemplate=("<b>%{customdata[0]}</b>"
+                           "<br>Volume of Assets %{customdata[1]:$,.0f}"
+                           "<br>Number of Accounts %{customdata[2]:,.0f}"
                            "<br>Avg balance %{customdata[3]:$,.0f}"
                            "<br>Plans %{customdata[4]}<extra></extra>")))
         f.update_geos(scope="usa", bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig(f, 420), **PLOT)
+        # Clicking a state selects it in the detail view below, without changing
+        # anything else on the page. The click returns the USPS code; we map it
+        # back to the state name and stash it for the selectbox default.
+        ev = st.plotly_chart(fig(f, 420), on_select="rerun",
+                             selection_mode="points", key="statemap",
+                             config={"displayModeBar": False},
+                             width="stretch")
+        pts = (ev.get("selection", {}) or {}).get("points", []) if ev else []
+        if pts:
+            code = pts[0].get("location")
+            back = {v: kk for kk, v in USPS.items()}
+            if code in back:
+                # Write the selectbox's key directly (the map renders before the
+                # selectbox this run), so the click lands in the dropdown.
+                st.session_state["state_pick"] = back[code]
+        st.markdown('<div class="note">Tip: click a state on the map to see its '
+                    'detail below.</div>', unsafe_allow_html=True)
 
     st.dataframe(
         s.sort_values(k, ascending=False)[
@@ -592,7 +693,10 @@ with tabs[1]:
             "avg": st.column_config.NumberColumn("Avg balance ($)", format="localized")})
 
     st.divider()
-    state = st.selectbox("Look at one state", sorted(df["state"].unique()))
+    # The selectbox keeps its own choice across reruns via its key, so changing
+    # the plan type or channel in the sidebar does not reset the chosen state.
+    # A map click writes the same key (above), so map and dropdown stay in sync.
+    state = st.selectbox("Look at one state", _states, key="state_pick")
     sd = df[df["state"] == state]
     sc = sd[sd["period"] == p_sel]
     sp = sd[sd["period"] == prev_p] if prev_p is not None else sd.iloc[:0]
@@ -614,10 +718,10 @@ with tabs[1]:
     f.add_scatter(x=g["t"], y=g["assets"], name="Assets",
                   line=dict(color=GREEN, width=2),
                   customdata=[usd(v) for v in g["assets"]],
-                  hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra>Assets</extra>")
+                  hovertemplate="%{x|%Y - Q%q}<br>%{customdata}<extra>Assets</extra>")
     f.add_scatter(x=g["t"], y=g["accounts"], name="Accounts", yaxis="y2",
                   line=dict(color=STEEL, width=2, dash="dot"),
-                  hovertemplate="%{x|%Y Q%q}<br>%{y:,.0f}<extra>Accounts</extra>")
+                  hovertemplate="%{x|%Y - Q%q}<br>%{y:,.0f}<extra>Accounts</extra>")
     f.update_layout(yaxis2=dict(overlaying="y", side="right", showgrid=False))
     money_ticks(f, "yaxis", g["assets"])
     st.plotly_chart(fig(f, 340), **PLOT)
@@ -645,103 +749,114 @@ with tabs[2]:
     current = set(latest["plan"])
     retired = sorted(set(plan_era["plan"]) - current)
 
-    show_retired = st.toggle(
-        f"Include the {len(retired)} plans that no longer report",
-        help="Plans that closed, merged, or were renamed. Their history stops "
-             "on their last reporting period.")
-    # Order plans by their state, then by plan name, so every plan sits in its
-    # state's block in the list rather than by the first letter of a name that
-    # might start with "College", "The", or a ticker. Requested by the Illinois
-    # Treasurer's office. The displayed names are left exactly as reported.
-    plan_state = plan_era.groupby("plan")["state"].last()
-    by_state = lambda names: sorted(
-        names, key=lambda p: (plan_state.get(p, ""), p))
-    universe = by_state(current) + (by_state(retired) if show_retired else [])
-    biggest = latest.groupby("plan")["assets"].sum().idxmax()
-    plan = st.selectbox("Plan", universe, index=universe.index(biggest))
-
-    pf = plan_era[plan_era["plan"] == plan].sort_values("period")
-    pc = pf[pf["period"] == p_sel]
-    active = len(pc) > 0
-    pstate = pf["state"].iloc[-1]
-    last_p = pf["period"].iloc[-1]
-    p0 = pf["period"].iloc[0]
-
-    if not active:
+    # A filter combination can legitimately be empty (for example Prepaid plans
+    # sold through an Advisor, which do not exist). Say so plainly rather than
+    # letting the plan picker fail on an empty set.
+    if plan_era.empty or (not current and not retired):
         st.markdown(
-            f'<div class="callout">This plan does not report in {q_sel}. Its '
-            f'record runs from {p0.year}Q{p0.quarter} to '
-            f'{last_p.year}Q{last_p.quarter}, and the figures below are its '
-            f'final reported quarter.</div>', unsafe_allow_html=True)
-        pc = pf[pf["period"] == last_p]
-        shown = f"{last_p.year}Q{last_p.quarter}"
+            f'<div class="callout">No plans match the current filters'
+            f'{" (" + type_sel + ", " + chan_sel + ")" if (type_sel != "Total" or chan_sel != "All") else ""}. '
+            f'Widen the plan type or channel in the sidebar to see plans here.'
+            f'</div>', unsafe_allow_html=True)
     else:
-        shown = q_sel
 
-    pa = pc["assets"].sum()
-    pac = pc["accounts"].sum()
-    st_assets = df[(df["period"] == pc["period"].iloc[0])
-                   & (df["state"] == pstate)]["assets"].sum()
+        show_retired = st.toggle(
+            f"Include the {len(retired)} plans that no longer report",
+            help="Plans that closed, merged, or were renamed. Their history stops "
+                 "on their last reporting period.")
+        # Order plans by their state, then by plan name, so every plan sits in its
+        # state's block in the list rather than by the first letter of a name that
+        # might start with "College", "The", or a ticker. Requested by the Illinois
+        # Treasurer's office. The displayed names are left exactly as reported.
+        plan_state = plan_era.groupby("plan")["state"].last()
+        by_state = lambda names: sorted(
+            names, key=lambda p: (plan_state.get(p, ""), p))
+        universe = by_state(current) + (by_state(retired) if show_retired else [])
+        biggest = latest.groupby("plan")["assets"].sum().idxmax()
+        plan = st.selectbox("Plan", universe, index=universe.index(biggest))
 
-    st.markdown(f"""
-    <div class="ledger">
-      <div class="cell"><div class="v">{usd(pa)}</div><div class="k">Assets, {shown}</div></div>
-      <div class="cell"><div class="v">{num(pac)}</div><div class="k">Accounts</div></div>
-      <div class="cell"><div class="v">{usd(ratio(pa, pac))}</div><div class="k">Average balance</div></div>
-      <div class="cell"><div class="v">{pct(ratio(pa, st_assets), signed=False)}</div>
-        <div class="k">Share of {pstate}</div></div>
-      <div class="cell"><div class="v">{p0.year}Q{p0.quarter}</div>
-        <div class="k">First on record</div></div>
-    </div>""", unsafe_allow_html=True)
+        pf = plan_era[plan_era["plan"] == plan].sort_values("period")
+        pc = pf[pf["period"] == p_sel]
+        active = len(pc) > 0
+        pstate = pf["state"].iloc[-1]
+        last_p = pf["period"].iloc[-1]
+        p0 = pf["period"].iloc[0]
 
-    aliases = sorted(set(pf["alias"]) - {plan})
-    if aliases:
-        st.markdown(f'<div class="note">The record also spells this plan '
-                    f'{", ".join(chr(34) + a + chr(34) for a in aliases)}. '
-                    f'Both spellings are the same plan, and its history below '
-                    f'is joined.</div>', unsafe_allow_html=True)
-    if len(pf) < 3:
-        st.markdown(f'<div class="note">This plan reports in only {len(pf)} '
-                    f'period(s), so its charts show a short line.</div>',
-                    unsafe_allow_html=True)
+        if not active:
+            st.markdown(
+                f'<div class="callout">This plan does not report in {q_sel}. Its '
+                f'record runs from {qlabel(p0)} to '
+                f'{qlabel(last_p)}, and the figures below are its '
+                f'final reported quarter.</div>', unsafe_allow_html=True)
+            pc = pf[pf["period"] == last_p]
+            shown = qlabel(last_p)
+        else:
+            shown = q_sel
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("#### Assets")
-        f = go.Figure(go.Scatter(x=pf["t"], y=pf["assets"], fill="tozeroy",
-                                 mode="lines+markers" if len(pf) < 6 else "lines",
-                                 line=dict(color=GREEN, width=2),
-                                 fillcolor="rgba(58,137,22,.12)",
-                                 customdata=[usd(v) for v in pf["assets"]],
-                                 hovertemplate="%{x|%Y Q%q}<br>%{customdata}<extra></extra>"))
-        money_ticks(f, "yaxis", pf["assets"])
-        st.plotly_chart(fig(f, 300), **PLOT)
-    with c2:
-        st.markdown("#### Accounts")
-        f = go.Figure(go.Scatter(x=pf["t"], y=pf["accounts"],
-                                 mode="lines+markers" if len(pf) < 6 else "lines",
-                                 line=dict(color=STEEL, width=2),
-                                 hovertemplate="%{x|%Y Q%q}<br>%{y:,.0f}<extra></extra>"))
-        st.plotly_chart(fig(f, 300), **PLOT)
+        pa = pc["assets"].sum()
+        pac = pc["accounts"].sum()
+        st_assets = df[(df["period"] == pc["period"].iloc[0])
+                       & (df["state"] == pstate)]["assets"].sum()
 
-    hist = pf[["quarter", "assets", "accounts"]].copy()
-    hist["avg"] = pd.Series(
-        [ratio(a, c) for a, c in zip(hist["assets"], hist["accounts"])],
-        index=hist.index).round(0)
-    st.dataframe(hist.iloc[::-1], hide_index=True, width="stretch", height=280,
-                 column_config={
-                     "quarter": "Period",
-                     "assets": st.column_config.NumberColumn("Assets", format="dollar"),
-                     "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
-                     "avg": st.column_config.NumberColumn("Avg balance ($)", format="localized")})
-    st.download_button("Download this plan's history",
-                       hist.to_csv(index=False).encode(),
-                       file_name=f"{re.sub(r'[^A-Za-z0-9]+', '_', plan)}.csv",
-                       mime="text/csv")
+        st.markdown(f"""
+        <div class="ledger">
+          <div class="cell"><div class="v">{usd(pa)}</div><div class="k">Assets, {shown}</div></div>
+          <div class="cell"><div class="v">{num(pac)}</div><div class="k">Accounts</div></div>
+          <div class="cell"><div class="v">{usd(ratio(pa, pac))}</div><div class="k">Average balance</div></div>
+          <div class="cell"><div class="v">{pct(ratio(pa, st_assets), signed=False)}</div>
+            <div class="k">Share of {pstate}</div></div>
+          <div class="cell"><div class="v">{qlabel(p0)}</div>
+            <div class="k">First on record</div></div>
+        </div>""", unsafe_allow_html=True)
 
-    st.markdown('<div class="note">Plan-level views start at 2009Q4. Before that '
-                'the record reports one combined line per state instead of '
-                'naming individual plans.</div>', unsafe_allow_html=True)
+        aliases = sorted(set(pf["alias"]) - {plan})
+        if aliases:
+            st.markdown(f'<div class="note">The record also spells this plan '
+                        f'{", ".join(chr(34) + a + chr(34) for a in aliases)}. '
+                        f'Both spellings are the same plan, and its history below '
+                        f'is joined.</div>', unsafe_allow_html=True)
+        if len(pf) < 3:
+            st.markdown(f'<div class="note">This plan reports in only {len(pf)} '
+                        f'period(s), so its charts show a short line.</div>',
+                        unsafe_allow_html=True)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### Assets")
+            f = go.Figure(go.Scatter(x=pf["t"], y=pf["assets"], fill="tozeroy",
+                                     mode="lines+markers" if len(pf) < 6 else "lines",
+                                     line=dict(color=GREEN, width=2),
+                                     fillcolor="rgba(58,137,22,.12)",
+                                     customdata=[usd(v) for v in pf["assets"]],
+                                     hovertemplate="%{x|%Y - Q%q}<br>%{customdata}<extra></extra>"))
+            money_ticks(f, "yaxis", pf["assets"])
+            st.plotly_chart(fig(f, 300), **PLOT)
+        with c2:
+            st.markdown("#### Accounts")
+            f = go.Figure(go.Scatter(x=pf["t"], y=pf["accounts"],
+                                     mode="lines+markers" if len(pf) < 6 else "lines",
+                                     line=dict(color=STEEL, width=2),
+                                     hovertemplate="%{x|%Y - Q%q}<br>%{y:,.0f}<extra></extra>"))
+            st.plotly_chart(fig(f, 300), **PLOT)
+
+        hist = pf[["quarter", "assets", "accounts"]].copy()
+        hist["avg"] = pd.Series(
+            [ratio(a, c) for a, c in zip(hist["assets"], hist["accounts"])],
+            index=hist.index).round(0)
+        st.dataframe(hist.iloc[::-1], hide_index=True, width="stretch", height=280,
+                     column_config={
+                         "quarter": "Period",
+                         "assets": st.column_config.NumberColumn("Assets", format="dollar"),
+                         "accounts": st.column_config.NumberColumn("Accounts", format="localized"),
+                         "avg": st.column_config.NumberColumn("Avg balance ($)", format="localized")})
+        st.download_button("Download this plan's history",
+                           hist.to_csv(index=False).encode(),
+                           file_name=f"{re.sub(r'[^A-Za-z0-9]+', '_', plan)}.csv",
+                           mime="text/csv")
+
+        st.markdown('<div class="note">Plan-level views start at 2009Q4. Before that '
+                    'the record reports one combined line per state instead of '
+                    'naming individual plans.</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════
 # WITHHELD FROM THE PORTAL
@@ -784,7 +899,7 @@ with tabs[3]:
             if idx and len(y) and y.iloc[0]:
                 y = y / y.iloc[0] * 100
             f.add_scatter(x=g["t"], y=y, name=name, mode="lines",
-                          hovertemplate="%{x|%Y Q%q}<br>%{y:,.0f}<extra>"
+                          hovertemplate="%{x|%Y - Q%q}<br>%{y:,.0f}<extra>"
                                         + name + "</extra>")
         if idx:
             f.add_hline(y=100, line_dash="dot", line_color=STEEL)
@@ -810,7 +925,7 @@ with tabs[4]:
                 "forward.")
     else:
         b = df[df["period"] == base_p]
-        blbl = f"{base_p.year}Q{base_p.quarter}"
+        blbl = qlabel(base_p)
         m = (cur.groupby(["state", "plan"], as_index=False)
              .agg(assets=("assets", "sum"), accounts=("accounts", "sum"))
              .merge(b.groupby(["state", "plan"], as_index=False)
@@ -920,18 +1035,22 @@ with tabs[3]:
             sorted(_pe["plan"].unique(), key=lambda p: (_ps.get(p, ""), p)))
     v = df.copy()
     if f_s: v = v[v["state"].isin(f_s)]
-    if f_q: v = v[v["quarter"].isin(f_q)]
+    if f_q: v = v[v["period"].isin([qparse(q) for q in f_q])]
     if f_p: v = v[v["plan"].isin(f_p)]
-    out = v[["quarter", "state", "plan", "type", "assets", "accounts"]]
+    v = v.copy()
+    v["Period"] = v["period"].map(qlabel)
+    out = v[["Period", "state", "plan", "type", "channel", "accounts", "assets"]]
 
     st.markdown(f'<div class="note">{len(out):,} rows match.</div>',
                 unsafe_allow_html=True)
     st.dataframe(out, hide_index=True, width="stretch", height=330,
                  column_config={
-                     "quarter": "Period", "state": "State", "plan": "Plan",
-                     "type": "Type",
-                     "assets": st.column_config.NumberColumn("Assets", format="dollar"),
-                     "accounts": st.column_config.NumberColumn("Accounts", format="localized")})
+                     "Period": "Period", "state": "State", "plan": "Plan",
+                     "type": "Type", "channel": "Channel",
+                     "assets": st.column_config.NumberColumn(
+                         "Volume of Assets", format="dollar"),
+                     "accounts": st.column_config.NumberColumn(
+                         "Number of Accounts", format="localized")})
 
     d1, d2 = st.columns(2)
     with d1:
@@ -1033,7 +1152,7 @@ with tabs[4]:
     with c1:
         ed = st.selectbox("Edition", LABELS[::-1], index=0,
                           help="Which reporting period the sheet is for.")
-        ed_p = pd.Period(ed, freq="Q")
+        ed_p = qparse(ed)
         earliest = int(min(p.year for p in QS))
         if ed_p.year <= earliest:
             st.markdown('<div class="note">This edition is the earliest on '

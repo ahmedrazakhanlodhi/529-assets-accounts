@@ -244,3 +244,27 @@ When it was wider than the track it overhung both values and touched them. The
 track now has room for the widest plausible delta: the check exercises
 `$129,170 +1580% $233,150` and still measures 3.2px of clearance, so the panel
 is not merely fitting today's numbers.
+
+## DOT Committee review changes (Nov 2026)
+Batch of changes from the states' month of testing:
+- Headline metrics renamed to "Volume of Assets" and "Number of Accounts".
+- Plan names standardized to "State - Name" so the list groups by state. The
+  full reported name is kept after the dash; the state is not duplicated where
+  the name already carries it.
+- Added a Distribution channel filter (All / Direct / Advisor) alongside the
+  plan-type filter. It reads an explicit Channel column when the data carries
+  one, and falls back to the plan name otherwise. Empty combinations (such as
+  Prepaid + Advisor) show a plain message instead of failing.
+- Clicking a state on the map opens its detail below. Changing the plan type or
+  channel no longer resets the selected state.
+- Quarter labels shown as "2026 - Q3" everywhere.
+- Map gradient darkened for clearer high-value states.
+- Red/green pair reworked for ADA: the decline color is now a dark burnt brown
+  with ~1.9:1 luminance contrast against the green (up from ~1.3:1), and
+  direction is always also shown by the bar's sign.
+- Added two disclaimers: a self-reported / not third-party-audited note in the
+  sidebar, and a note near the map that a plan's assets and accounts are not
+  necessarily held by residents of the administering state.
+- Kansas plan names cleaned up via the standard merge; its two current plans
+  (ACI-Schwab and Learning Quest Education) show cleanly, older variants under
+  the retired-plans toggle.
