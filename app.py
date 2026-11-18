@@ -868,7 +868,7 @@ with tabs[2]:
                            file_name=f"{re.sub(r'[^A-Za-z0-9]+', '_', plan)}.csv",
                            mime="text/csv")
 
-        st.markdown('<div class="note">Plan-level views start at 2009Q4. Before that '
+        st.markdown('<div class="note">Plan-level views start at 2009 - Q4. Before that '
                     'the record reports one combined line per state instead of '
                     'naming individual plans.</div>', unsafe_allow_html=True)
 
@@ -899,7 +899,7 @@ with tabs[3]:
     picks = st.multiselect(f"Choose up to 6 {level.lower()}", opts,
                            default=default, max_selections=6)
     if level == "Plans":
-        st.markdown('<div class="note">Plans are comparable from 2009Q4, the '
+        st.markdown('<div class="note">Plans are comparable from 2009 - Q4, the '
                     'point where the record starts naming them individually.</div>',
                     unsafe_allow_html=True)
     if picks:
@@ -1131,7 +1131,7 @@ that on every run.
 
 **Two eras in one record.** Through 2008Q4 the data arrives as one combined
 line per state, labelled with the state name rather than a plan name. From
-2009Q4 it names individual plans. National and state totals are sound across
+2009 - Q4 it names individual plans. National and state totals are sound across
 the whole record, because a sum is a sum. Plan-level views start at 2009Q4,
 and the Plans and Compare tabs enforce that. This also means a single plan can
 appear under more than one name over the years: Kansas's Schwab plan, for
